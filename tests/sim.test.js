@@ -137,3 +137,28 @@ describe('timetable-driven simulation', () => {
     expect(stopScreen(sim, 'lrt').status).toBe('Offline');
   });
 });
+
+describe('students time their arrival to the timetable', () => {
+  const runDay = () => {
+    const sim = createSim({ lines: LINES, routes, seed: 1 });
+    let ks9 = null;
+    while (sim.running) {
+      stepSim(sim, 10);
+      if (ks9 === null && sim.clock >= 9 * 3600) ks9 = sim.queues.kuchai_sentral.queue;
+    }
+    return { sim, ks9 };
+  };
+  const { sim, ks9 } = runDay();
+
+  it('nobody waits at Kuchai Sentral at 9:00 when the next bus is at 10:00', () => {
+    expect(ks9).toBe(0);
+  });
+  it('average wait over the day is short and nobody waits for hours', () => {
+    const agg = sim.telemetry.agg;
+    expect(agg.waitSum / agg.waitN / 60).toBeLessThan(12);
+    expect(agg.waitMax / 60).toBeLessThan(90);
+  });
+  it('still carries about as many riders as the timetable is sized for', () => {
+    expect(sim.stats.boarded).toBeGreaterThan(2500);
+  });
+});

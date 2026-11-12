@@ -10,3 +10,7 @@ export function project(lat, lon) {
     z: -(lat - ORIGIN.lat) * M_PER_DEG_LAT,
   };
 }
+
+export function unproject(x, z) {
+  return { lat: ORIGIN.lat - z / M_PER_DEG_LAT, lon: ORIGIN.lon + x / M_PER_DEG_LON };
+}

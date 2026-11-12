@@ -9,6 +9,7 @@ import { createWorld } from './scene/world.js';
 import { createBusLayer } from './scene/buses.js';
 import { createStopLayer } from './scene/stops.js';
 import { createPanel } from './ui/panel.js';
+import { createTour } from './ui/tour.js';
 
 const MAX_REAL_DT = 0.25; // seconds; a background tab must not jump the sim forward
 const CLICK_SLOP_PX = 6; // a drag longer than this orbits the camera instead of picking
@@ -58,6 +59,7 @@ const app = {
   setQueue(key, n) {
     return setQueue(this.sim, key, n);
   },
+  routes,
 };
 function syncLineVisibility() {
   for (const l of LINES) world.setLineVisible(l.id, overrides[l.id]?.enabled !== false);
@@ -78,7 +80,10 @@ const panel = createPanel(app, {
     syncLineVisibility();
     app.jumpTo(app.sim.clock); // replay today up to now with the edited routes
   },
+  onTour: () => tour.start(),
 });
+const tour = createTour({ panel, world, app });
+tour.startIfFirstVisit();
 
 // Click a stop or bus to select and focus it.
 const raycaster = new THREE.Raycaster();

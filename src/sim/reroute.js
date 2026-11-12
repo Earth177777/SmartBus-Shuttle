@@ -21,13 +21,19 @@ export const REROUTE = {
   STOP_SEC: 60,
 };
 
-export function shouldReroute({ excess, freeSeats, detourSec: detour, delaySec }) {
-  return (
-    excess >= REROUTE.MIN_EXCESS &&
-    freeSeats >= REROUTE.MIN_FREE_SEATS &&
-    detour <= REROUTE.MAX_DETOUR_SEC &&
-    delaySec + detour <= REROUTE.PROMISE_BUFFER_SEC
-  );
+// Each condition of the rule with its value, limit and result (for the Logic tab).
+export function explainReroute({ excess, freeSeats, detourSec: detour, delaySec }) {
+  const checks = [
+    { label: 'Excess people', value: excess, op: '≥', limit: REROUTE.MIN_EXCESS, unit: '' },
+    { label: 'Free seats', value: freeSeats, op: '≥', limit: REROUTE.MIN_FREE_SEATS, unit: '' },
+    { label: 'Detour', value: Math.round(detour), op: '≤', limit: REROUTE.MAX_DETOUR_SEC, unit: 's' },
+    { label: 'Delay + detour', value: Math.round(delaySec + detour), op: '≤', limit: REROUTE.PROMISE_BUFFER_SEC, unit: 's' },
+  ].map((c) => ({ ...c, pass: c.op === '≥' ? c.value >= c.limit : c.value <= c.limit }));
+  return { ok: checks.every((c) => c.pass), checks };
+}
+
+export function shouldReroute(inputs) {
+  return explainReroute(inputs).ok;
 }
 
 export function detourSec(offMetres, trafficFactor) {
