@@ -47,12 +47,15 @@ export function createSim({ routes, seed = 1 }) {
   // bus passes when the LRT line has built up rather than just after it was cleared.
   const P1 = makeLineBus('P1', 'parkhill', 'parkhill', SERVICE_START + PARKHILL_OFFSET_SEC);
   sim.buses.push(L1, L2, P1);
+  // Load each bus's first cycle now so stop screens show the timetable from 07:00.
+  for (const bus of sim.buses) bus.legs = cycleLegs(sim, bus);
   return sim;
 }
 
 function makeLineBus(id, line, home, firstDeparture) {
   const bus = createBus(id, line);
   bus.atStop = home;
+  bus.home = home;
   bus.nextDep = firstDeparture;
   bus.legs = [];
   return bus;
@@ -224,6 +227,9 @@ export function stopScreen(sim, stopId) {
       best = 0;
     } else if (b.atStop === stopId && b.legs?.[0]?.type === 'wait') {
       best = Math.min(best, Math.max(0, b.legs[0].until - sim.clock));
+    } else if (b.home === stopId) {
+      // Out on its run: the stop's screen shows the next timetabled departure.
+      best = Math.min(best, Math.max(0, b.nextDep - sim.clock));
     }
   }
   return {

@@ -59,6 +59,19 @@ describe('simulation', () => {
     expect(sim.clock).toBe(clock);
   });
 
+  it('shows the first scheduled bus before the sim has stepped', () => {
+    const sim = createSim({ routes, seed: 1 });
+    expect(stopScreen(sim, 'lrt').nextBusMin).toBe(0);
+    expect(stopScreen(sim, 'parkhill').nextBusMin).toBe(8);
+  });
+
+  it('shows the next scheduled departure after the Parkhill bus has left', () => {
+    const sim = createSim({ routes, seed: 1 });
+    run(sim, 10 * 60); // 07:10 — P1 left Parkhill at 07:09, next departure 07:23
+    expect(sim.buses.find((b) => b.id === 'P1').atStop).not.toBe('parkhill');
+    expect(stopScreen(sim, 'parkhill').nextBusMin).toBe(13);
+  });
+
   it('stop screen reports line length and next bus', () => {
     const sim = createSim({ routes, seed: 1 });
     run(sim, 120);

@@ -21,6 +21,9 @@ const ROAD_WIDTH = {
 };
 const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary']);
 const CAMPUS_RADIUS = 260; // metres around APU tinted as campus
+const DESKTOP_MIN_WIDTH = 768; // matches the CSS breakpoint for the side panel
+const PANEL_WIDTH = 376; // panel 360 px + 16 px gutter
+const MOBILE_SHEET_SHARE = 0.48; // matches .panel max-height on phones
 
 // Flat ribbon along a polyline at height y.
 export function ribbonGeometry(pts, width, y) {
@@ -96,7 +99,7 @@ export function createWorld(container, area, routes) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.sky);
-  scene.fog = new THREE.Fog(COLORS.sky, 2200, 4200);
+  scene.fog = new THREE.Fog(COLORS.sky, 3000, 6500);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c0c8, 1.6));
   const sun = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -121,16 +124,19 @@ export function createWorld(container, area, routes) {
 
   const s = area.stops;
   // Frame the midpoint between the LRT and APU (routes loop east of APU, so lean right).
-  const center = new THREE.Vector3((s.apu.x + s.lrt.x) / 2 + 120, 0, (s.apu.z + s.lrt.z) / 2 + 40);
-  const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 5, 9000);
-  camera.position.set(center.x + 200, 1150, center.z + 1050);
+  const center = new THREE.Vector3((s.apu.x + s.lrt.x) / 2 + 200, 0, (s.apu.z + s.lrt.z) / 2 + 40);
+  const aspect = container.clientWidth / container.clientHeight;
+  const camera = new THREE.PerspectiveCamera(40, aspect, 5, 12000);
+  // Narrow (portrait) screens see less sideways, so start further back.
+  const back = Math.min(Math.max(Math.pow(aspect, -0.8), 1), 2.2);
+  camera.position.set(center.x + 140 * back, 1700 * back, center.z + 1550 * back);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(center);
   controls.enableDamping = true;
   controls.maxPolarAngle = 1.35;
   controls.minDistance = 120;
-  controls.maxDistance = 3200;
+  controls.maxDistance = 5000;
   controls.update();
 
   let focusTarget = null;
@@ -149,10 +155,16 @@ export function createWorld(container, area, routes) {
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
     camera.aspect = w / h;
+    // On desktop the panel covers the right side: shift the view so the map's
+    // centre sits in the visible area left of it.
+    // On phones the bottom sheet covers the lower ~half: shift the view up instead.
+    if (w >= DESKTOP_MIN_WIDTH) camera.setViewOffset(w, h, PANEL_WIDTH / 2, 0, w, h);
+    else camera.setViewOffset(w, h, 0, h * MOBILE_SHEET_SHARE / 2, w, h);
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
   }
   window.addEventListener('resize', resize);
+  resize();
 
   return { scene, camera, renderer, controls, focus, update, resize };
 }

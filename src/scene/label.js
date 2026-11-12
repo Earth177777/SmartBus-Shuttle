@@ -13,6 +13,8 @@ export function makeLabel(text, { bg = '#111827', fg = '#ffffff', scale = 1 } = 
     const font = 'bold 40px system-ui, -apple-system, Segoe UI, sans-serif';
     ctx.font = font;
     const w = Math.ceil(ctx.measureText(value).width) + 36;
+    // GPU texture storage is fixed-size: drop it when the canvas size changes.
+    if (canvas.width !== w) tex.dispose();
     canvas.width = w;
     canvas.height = 64;
     ctx.font = font;
