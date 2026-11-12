@@ -9,7 +9,8 @@ export const APU = { id: 'apu', name: 'APU Campus', lat: 3.0553, lon: 101.7006 }
 export const STOPS = [
   APU,
   { id: 'lrt', name: 'LRT Bukit Jalil', lat: 3.0583, lon: 101.6922 },
-  { id: 'parkhill', name: 'Parkhill Residence', lat: 3.05666, lon: 101.69597 },
+  // Front gate (guardhouse lift gates) on Susur Jalil Sejahtera — the bus does not use the Jalan Teknologi 2 back lane.
+  { id: 'parkhill', name: 'Parkhill Residence', lat: 3.05478, lon: 101.69577 },
   { id: 'fortune_park', name: 'Fortune Park', lat: 3.03695, lon: 101.70682 },
   { id: 'city_of_green', name: 'City of Green', lat: 3.04371, lon: 101.69191 },
   { id: 'maple', name: 'The Maple Residences', lat: 3.06505, lon: 101.68156 },
