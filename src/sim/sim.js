@@ -7,6 +7,7 @@ import { buildDepartures, pickupOffsetSec } from './schedule.js';
 import { demandPerMinute, peakRateForTimetable } from './demand.js';
 import { trafficFactor, BUS_SLOWDOWN } from './traffic.js';
 import { needsExtraBus } from './rules.js';
+import { corridorStops, shouldReroute, detourSec, REROUTE } from './reroute.js';
 
 export const SERVICE_START = 6.5 * 3600; // 06:30
 export const SERVICE_END = 22.5 * 3600; // 22:30
@@ -42,7 +43,8 @@ export function createSim({ lines, routes, seed = 1, startClock = SERVICE_START 
     buses: [],
     queues: {},
     alerts: [],
-    stats: { boarded: 0, extraBuses: 0, lateDepartures: 0 },
+    stats: { boarded: 0, extraBuses: 0, lateDepartures: 0, reroutes: 0, dropped: 0 },
+    stopNames: Object.fromEntries(Object.entries(routes.stops).map(([id, st]) => [id, st.name])),
   };
   const routeById = Object.fromEntries(routes.lines.map((r) => [r.id, r]));
   for (const cfg of lines) {
@@ -68,6 +70,17 @@ export function createSim({ lines, routes, seed = 1, startClock = SERVICE_START 
       sim.buses.push(bus);
     }
   }
+  // Other routes' stops that lie on each leg of this route (for rerouting).
+  const owner = {};
+  for (const L of Object.values(sim.lines)) for (const st of L.cfg.pickups) owner[st] = L.cfg.id;
+  for (const L of Object.values(sim.lines)) {
+    const others = Object.fromEntries(
+      Object.entries(routes.stops).filter(([id]) => owner[id] && owner[id] !== L.cfg.id),
+    );
+    const tag = (list) => list.map((e) => ({ ...e, lineId: owner[e.stopId] }));
+    L.outSide = L.out.map((leg) => tag(corridorStops(leg.path, others)));
+    L.backShare = L.back.map((leg) => tag(corridorStops(leg.path, others)));
+  }
   while (sim.clock < startClock && sim.running) stepSim(sim, Math.min(FAST_FORWARD_STEP, startClock - sim.clock));
   sim.alerts = sim.alerts.filter((a) => startClock - a.t <= ALERT_TTL_SEC);
   return sim;
@@ -91,7 +104,10 @@ function tripLegs(L, dir, trip) {
     if (dir === 'out') legs.push({ type: 'dwell', stop: leg.from, board: leg.from });
     else if (i === 0) legs.push({ type: 'dwell', stop: 'apu', board: backKey(L.cfg.id) });
     else legs.push({ type: 'dwell', stop: leg.from, alightShare: 1 / (drops - i + 1) });
-    legs.push({ type: 'drive', path: leg.path, dest: leg.to, alightAll: i === drops - 1 });
+    legs.push({
+      type: 'drive', path: leg.path, dest: leg.to, alightAll: i === drops - 1,
+      ...(dir === 'out' ? { side: L.outSide[i], sideIdx: 0 } : { share: L.backShare[i], drops: [] }),
+    });
   });
   legs.trip = trip;
   return legs;
@@ -107,7 +123,70 @@ function assignTrip(sim, bus, L, dep) {
   dep.lateSec = Math.max(0, sim.clock - dep.t);
   if (!dep.extra && dep.lateSec > 120) sim.stats.lateDepartures++;
   bus.trip = dep;
+  bus.delaySec = 0;
   bus.legs = tripLegs(L, dep.dir, dep);
+}
+
+// Seats arriving at `stop` (a pickup of line L2) within the window, in `dir`.
+function seatsComing(sim, L2, stop, dir) {
+  const now = sim.clock;
+  const origin = originOf(L2, dir);
+  const scheduled = L2.deps.filter((d) => !d.served && d.dir === dir && d.t <= now + REROUTE.NEXT_BUS_WINDOW_SEC).length;
+  let seats = scheduled * L2.cfg.capacity;
+  for (const b of sim.buses) {
+    if (b.line !== L2.cfg.id || !b.trip || b.trip.dir !== dir) continue;
+    const pendingHere = b.legs.some((l) => l.type === 'dwell' && l.stop === (dir === 'out' ? stop : origin));
+    if (pendingHere || (b.state === 'dwelling' && b.at === (dir === 'out' ? stop : origin))) seats += b.capacity - b.load;
+  }
+  return seats;
+}
+
+function rerouteAlert(sim, stopId, lineId, text) {
+  sim.alerts.push({ t: sim.clock, stopId, lineId, text });
+  if (sim.alerts.length > 30) sim.alerts.shift();
+}
+
+// On a trip to APU: a crowded stop of another route on this road → pull in and pick up.
+function considerPickup(sim, bus, entry) {
+  const L2 = sim.lines[entry.lineId];
+  if (!L2) return false;
+  const excess = sim.queues[entry.stopId].queue - seatsComing(sim, L2, entry.stopId, 'out');
+  const freeSeats = bus.capacity - bus.load;
+  const detour = detourSec(entry.off, travelFactor(sim.clock));
+  const delaySec = (bus.trip?.lateSec ?? 0) + (bus.delaySec ?? 0);
+  if (!shouldReroute({ excess, freeSeats, detourSec: detour, delaySec })) return false;
+  const n = Math.min(freeSeats, excess);
+  bus.detour = { stopId: entry.stopId, left: detour, kind: 'pickup', n };
+  bus.delaySec = (bus.delaySec ?? 0) + detour;
+  sim.stats.reroutes++;
+  const name = sim.stopNames[entry.stopId];
+  rerouteAlert(sim, entry.stopId, L2.cfg.id, `${bus.id} (${sim.lines[bus.line].cfg.code}) stopping to pick up ${n} — ${name} is crowded`);
+  return true;
+}
+
+// Leaving APU: take riders from another route's long line whose stop is on this road.
+function shareAtApu(sim, bus) {
+  for (const leg of bus.legs) {
+    if (leg.type !== 'drive' || !leg.share) continue;
+    for (const entry of leg.share) {
+      const L2 = sim.lines[entry.lineId];
+      if (!L2) continue;
+      const q = sim.queues[backKey(L2.cfg.id)];
+      const excess = q.queue - seatsComing(sim, L2, 'apu', 'back');
+      const freeSeats = bus.capacity - bus.load;
+      const detour = detourSec(entry.off, travelFactor(sim.clock));
+      const delaySec = (bus.trip?.lateSec ?? 0) + (bus.delaySec ?? 0);
+      if (!shouldReroute({ excess, freeSeats, detourSec: detour, delaySec })) continue;
+      const n = Math.min(freeSeats, excess);
+      q.queue -= n;
+      bus.load += n;
+      sim.stats.boarded += n;
+      leg.drops.push({ stopId: entry.stopId, d: entry.d, off: entry.off, n });
+      bus.delaySec = (bus.delaySec ?? 0) + detour;
+      sim.stats.reroutes++;
+      rerouteAlert(sim, 'apu', L2.cfg.id, `${bus.id} (${sim.lines[bus.line].cfg.code}) takes ${n} riders for ${sim.stopNames[entry.stopId]} — passes on its way`);
+    }
+  }
 }
 
 const isFree = (b) => b.state === 'idle' && b.legs.length === 0;
@@ -200,7 +279,28 @@ function board(sim, bus, qKey) {
 
 function stepBus(sim, bus, dt) {
   const factor = travelFactor(sim.clock);
-  for (let guard = 0; guard < 16 && dt > 1e-9 && bus.legs.length; guard++) {
+  for (let guard = 0; guard < 24 && dt > 1e-9 && bus.legs.length; guard++) {
+    if (bus.detour) {
+      const take = Math.min(dt, bus.detour.left);
+      bus.detour.left -= take;
+      dt -= take;
+      if (bus.detour.left <= 1e-9) {
+        const { kind, stopId, n } = bus.detour;
+        if (kind === 'pickup') {
+          const q = sim.queues[stopId];
+          const k = Math.max(0, Math.min(n, q.queue, bus.capacity - bus.load));
+          q.queue -= k;
+          bus.load += k;
+          sim.stats.boarded += k;
+        } else {
+          const k = Math.min(n, bus.load);
+          bus.load -= k;
+          sim.stats.dropped += k;
+        }
+        bus.detour = null;
+      }
+      continue;
+    }
     const leg = bus.legs[0];
     if (leg.type === 'dwell') {
       if (bus.state !== 'dwelling') {
@@ -216,6 +316,7 @@ function stepBus(sim, bus, dt) {
         if (leg.board) board(sim, bus, leg.board);
         bus.state = 'idle';
         bus.legs.shift();
+        if (leg.stop === 'apu' && bus.trip?.dir === 'back') shareAtApu(sim, bus);
       }
     } else {
       if (bus.state !== 'driving') {
@@ -224,7 +325,26 @@ function stepBus(sim, bus, dt) {
       }
       const take = Math.min(dt, (bus.path.duration - bus.tt) * factor);
       dt -= take;
-      if (advanceBus(bus, take, factor) === 'arrived' || bus.tt >= bus.path.duration) {
+      advanceBus(bus, take, factor);
+      if (bus.trip && leg.side) {
+        while (leg.sideIdx < leg.side.length && leg.side[leg.sideIdx].d <= bus.d) {
+          const started = considerPickup(sim, bus, leg.side[leg.sideIdx++]);
+          if (started) break;
+        }
+      }
+      if (leg.drops?.length) {
+        const i = leg.drops.findIndex((x) => x.d <= bus.d);
+        if (i !== -1) {
+          const x = leg.drops.splice(i, 1)[0];
+          bus.detour = { stopId: x.stopId, left: detourSec(x.off, factor), kind: 'drop', n: x.n };
+        }
+      }
+      if (bus.detour) {
+        // A detour right at the end of the leg: stay "driving" so the arrival is handled after it.
+        if (bus.tt >= bus.path.duration) bus.state = 'driving';
+        continue;
+      }
+      if (bus.tt >= bus.path.duration) {
         bus.state = 'idle';
         bus.at = leg.dest;
         bus.dest = null;
@@ -268,6 +388,10 @@ function lineOfStop(sim, stopId) {
 // Bus currently serving (or about to serve) the next trip from `stop` in `dir`.
 function nextBusEta(sim, L, stop) {
   let best = Infinity;
+  // Another route's bus rerouted to this stop counts too.
+  for (const b of sim.buses) {
+    if (b.detour?.kind === 'pickup' && b.detour.stopId === stop) best = Math.min(best, b.detour.left);
+  }
   for (const b of sim.buses) {
     if (b.line !== L.cfg.id || !b.trip) continue;
     const pending = b.legs.findIndex((l) => l.type === 'dwell' && l.stop === stop);
@@ -312,4 +436,12 @@ export function stopScreen(sim, stopId) {
 // APU's departure board: next trip home for every route.
 export function departuresBoard(sim) {
   return sim.order.map((id) => screenFor(sim, sim.lines[id], 'apu', 'back', backKey(id)));
+}
+
+// Set how many people wait at a stop ('lrt') or in an APU line ('apu:lrt'). 0–999 people.
+export function setQueue(sim, key, n) {
+  const q = sim.queues[key];
+  if (!q || !Number.isFinite(n)) return false;
+  q.queue = Math.min(999, Math.max(0, Math.round(n)));
+  return true;
 }

@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import area from './data/area.json';
 import routes from './data/routes.json';
 import { LINES } from './data/lines.js';
-import { createSim, stepSim, SERVICE_START } from './sim/sim.js';
+import { createSim, stepSim, setQueue, SERVICE_START } from './sim/sim.js';
+import { applyOverrides } from './sim/overrides.js';
 import { createWorld } from './scene/world.js';
 import { createBusLayer } from './scene/buses.js';
 import { createStopLayer } from './scene/stops.js';
@@ -19,6 +20,7 @@ const lineColors = Object.fromEntries(LINES.map((l) => [l.id, l.color]));
 const stopColors = Object.fromEntries(LINES.flatMap((l) => l.pickups.map((s) => [s, l.color])));
 const routeById = Object.fromEntries(routes.lines.map((r) => [r.id, r]));
 const lineViews = LINES.map((l) => ({
+  id: l.id,
   color: l.color,
   out: routeById[l.id].outbound.map((leg) => leg.pts),
   back: routeById[l.id].inbound.map((leg) => leg.pts),
@@ -32,8 +34,17 @@ const queueOf = (sim, stopId) =>
     : sim.queues[stopId]?.queue ?? 0;
 const stopLayer = createStopLayer(world.scene, stops, stopColors, queueOf);
 
+// Route edits live in this browser only (localStorage may be unavailable: then they last for the visit).
+const OVERRIDES_KEY = 'smartshuttle.overrides.v1';
+let overrides = {};
+try { overrides = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? '{}') ?? {}; } catch { overrides = {}; }
+function saveOverrides() {
+  try { localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides)); } catch { /* private mode etc. */ }
+}
+
 const newSeed = () => Math.floor(Math.random() * 1e6);
-const makeSim = (startClock = SERVICE_START) => createSim({ lines: LINES, routes, seed: newSeed(), startClock });
+const makeSim = (startClock = SERVICE_START) =>
+  createSim({ lines: applyOverrides(LINES, overrides), routes, seed: newSeed(), startClock });
 const app = {
   sim: makeSim(7 * 3600),
   speed: 10,
@@ -44,7 +55,14 @@ const app = {
   jumpTo(clockSec) {
     this.sim = makeSim(clockSec);
   },
+  setQueue(key, n) {
+    return setQueue(this.sim, key, n);
+  },
 };
+function syncLineVisibility() {
+  for (const l of LINES) world.setLineVisible(l.id, overrides[l.id]?.enabled !== false);
+}
+syncLineVisibility();
 app.world = world;
 window.smartshuttle = app; // handy for debugging in the console
 
@@ -53,6 +71,13 @@ const panel = createPanel(app, {
   stops,
   onSelectStop: (id) => world.focus(stops[id].x, stops[id].z, FOCUS_DISTANCE),
   onOverview: () => world.overview(),
+  getOverrides: () => overrides,
+  onApplyOverrides: (next) => {
+    overrides = next;
+    saveOverrides();
+    syncLineVisibility();
+    app.jumpTo(app.sim.clock); // replay today up to now with the edited routes
+  },
 });
 
 // Click a stop or bus to select and focus it.

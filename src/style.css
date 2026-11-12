@@ -94,7 +94,7 @@ select { font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid va
 .bus-info { font-size: 13px; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
 .bus-info i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
 .stats span { display: block; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stats small { color: var(--muted); font-size: 11px; }
 
@@ -128,3 +128,24 @@ select { font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid va
   .tile-value { font-size: 18px; }
   .attribution { top: 12px; bottom: auto; }
 }
+
+.queue-form { display: flex; align-items: center; gap: 6px; }
+.queue-form label { font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.queue-form input { width: 84px; }
+.queue-form select { min-width: 0; }
+input[type='number'], textarea { font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+
+.editor { font-size: 13px; }
+.editor summary { cursor: pointer; font-weight: 600; color: var(--text); }
+.editor-body { display: grid; gap: 8px; margin-top: 8px; }
+.editor-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.editor-row select { flex: 1; min-width: 0; }
+.editor-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
+.editor-row input[type='number'] { width: 64px; }
+.editor .stack { display: grid; gap: 4px; color: var(--muted); font-weight: 600; }
+.editor textarea { width: 100%; resize: vertical; font-variant-numeric: tabular-nums; font-size: 13px; }
+.editor-msg { margin: 0; color: var(--muted); min-height: 1em; }
+.primary { border: 0; background: var(--text); color: #fff; border-radius: 10px; font-weight: 600; }
+.primary.small { padding: 7px 12px; font-size: 13px; }
+.check { cursor: pointer; }
+.off-note { margin: 0; font-size: 13px; opacity: 0.8; }

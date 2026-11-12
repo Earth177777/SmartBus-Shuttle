@@ -22,6 +22,8 @@ const DESKTOP_MIN_WIDTH = 768; // matches the CSS breakpoint for the side panel
 const PANEL_WIDTH = 416; // panel 400 px + 16 px gutter
 const MOBILE_SHEET_SHARE = 0.48; // matches .panel max-height on phones
 const ROUTE_WIDTH = { out: 16, back: 7 };
+const ROAD_Y = { minor: 0.3, major: 0.6 };
+const ROUTE_Y = { base: 1.5, step: 0.8 };
 
 // Flat ribbon along a polyline at height y.
 export function ribbonGeometry(pts, width, y) {
@@ -74,7 +76,7 @@ function buildingsMesh(buildings) {
 function roadsMesh(roads, major) {
   const parts = roads
     .filter((r) => MAJOR.has(r.kind) === major && r.pts.length > 1)
-    .map((r) => ribbonGeometry(r.pts, ROAD_WIDTH[r.kind] ?? 5, major ? 0.12 : 0.08));
+    .map((r) => ribbonGeometry(r.pts, ROAD_WIDTH[r.kind] ?? 5, major ? ROAD_Y.major : ROAD_Y.minor));
   if (!parts.length) return null;
   return new THREE.Mesh(
     mergeGeometries(parts, false),
@@ -82,16 +84,15 @@ function roadsMesh(roads, major) {
   );
 }
 
-export function routeLine(polyline, color, y = 0.4, width = 4) {
-  return new THREE.Mesh(
-    ribbonGeometry(polyline.pts, width, y),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 }),
-  );
+// Solid (not transparent): overlapping transparent ribbons re-sort as the camera moves and flicker.
+export function routeLine(polyline, color, y = 1, width = 4) {
+  return new THREE.Mesh(ribbonGeometry(polyline.pts, width, y), new THREE.MeshBasicMaterial({ color }));
 }
 
 // lines: [{ color: '#rrggbb', out: [[x, z]...][], back: [[x, z]...][] }]
 export function createWorld(container, area, lines) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Log depth: the scene spans ~10 km, so close-together layers (roads, routes) would z-fight.
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer.domElement);
@@ -118,10 +119,15 @@ export function createWorld(container, area, lines) {
     if (m) scene.add(m);
   }
   // Each route: trips to APU drawn wide, trips home thinner on top (they often share roads).
+  const lineGroups = {};
   lines.forEach((line, i) => {
-    const y = 0.4 + i * 0.05;
-    for (const pts of line.out) scene.add(routeLine({ pts }, line.color, y, ROUTE_WIDTH.out));
-    for (const pts of line.back) scene.add(routeLine({ pts }, line.color, y + 0.02, ROUTE_WIDTH.back));
+    // Each route gets its own clear height so shared roads never fight for the same pixels.
+    const y = ROUTE_Y.base + i * ROUTE_Y.step;
+    const group = new THREE.Group();
+    for (const pts of line.out) group.add(routeLine({ pts }, line.color, y, ROUTE_WIDTH.out));
+    for (const pts of line.back) group.add(routeLine({ pts }, line.color, y + ROUTE_Y.step / 2, ROUTE_WIDTH.back));
+    lineGroups[line.id] = group;
+    scene.add(group);
   });
 
   // Frame every stop.
@@ -184,5 +190,9 @@ export function createWorld(container, area, lines) {
   window.addEventListener('resize', resize);
   resize();
 
-  return { scene, camera, renderer, controls, focus, overview, update, resize };
+  function setLineVisible(id, visible) {
+    if (lineGroups[id]) lineGroups[id].visible = visible;
+  }
+
+  return { scene, camera, renderer, controls, focus, overview, update, resize, setLineVisible };
 }

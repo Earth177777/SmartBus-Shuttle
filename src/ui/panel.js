@@ -1,4 +1,5 @@
 import { stopScreen, departuresBoard } from '../sim/sim.js';
+import { parseTimetableText } from '../sim/overrides.js';
 import { trafficFactor, trafficLevel } from '../sim/traffic.js';
 import { formatClock, formatWait } from './format.js';
 
@@ -19,7 +20,7 @@ function whenText(s) {
 }
 
 // lines: LINES config; stops: { id: {name} }
-export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
+export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOverrides, onApplyOverrides }) {
   const lineById = Object.fromEntries(lines.map((l) => [l.id, l]));
   const pickupStops = lines.flatMap((l) => l.pickups.map((id) => ({ id, line: l })));
 
@@ -47,11 +48,21 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
     </div>
 
     <section class="screen" data-k="screen" aria-live="polite"></section>
+
+    <form class="queue-form" data-k="queueForm">
+      <label for="queueInput">Set waiting</label>
+      <select data-k="queueLine" aria-label="APU line for route">
+        ${lines.map((l) => `<option value="${l.id}">${esc(l.code)} line</option>`).join('')}
+      </select>
+      <input id="queueInput" data-k="queueInput" type="number" min="0" max="999" step="1" inputmode="numeric" placeholder="people" />
+      <button class="ghost small" type="submit">Set</button>
+    </form>
     <section class="bus-info" data-k="busInfo" hidden></section>
 
     <section class="stats">
       <div><span data-k="boarded">0</span><small>riders boarded</small></div>
       <div><span data-k="extra">0</span><small>extra buses called</small></div>
+      <div><span data-k="reroutes">0</span><small>reroutes</small></div>
       <div><span data-k="late">0</span><small>late departures</small></div>
     </section>
 
@@ -67,6 +78,30 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
         </select>
       </label>
     </section>
+
+    <details class="editor" data-k="editor">
+      <summary>Edit routes &amp; times</summary>
+      <div class="editor-body">
+        <div class="editor-row">
+          <select data-k="edLine" aria-label="Route to edit">
+            ${lines.map((l) => `<option value="${l.id}">${esc(l.code)} · ${esc(l.name)}</option>`).join('')}
+          </select>
+          <label class="check"><input type="checkbox" data-k="edEnabled" /> Running</label>
+        </div>
+        <div class="editor-row">
+          <label>Buses <input type="number" min="1" max="10" data-k="edFleet" /></label>
+          <label>Seats <input type="number" min="4" max="80" data-k="edSeats" /></label>
+        </div>
+        <label class="stack">Times to APU <textarea rows="3" data-k="edOut" spellcheck="false"></textarea></label>
+        <label class="stack">Times from APU <small>(** = limited space)</small><textarea rows="3" data-k="edBack" spellcheck="false"></textarea></label>
+        <div class="editor-row">
+          <button type="button" class="primary small" data-k="edApply">Apply</button>
+          <button type="button" class="ghost small" data-k="edReset">Reset route</button>
+          <button type="button" class="ghost small" data-k="edResetAll">Reset all</button>
+        </div>
+        <p class="editor-msg" data-k="edMsg" role="status"></p>
+      </div>
+    </details>
 
     <details class="legend">
       <summary>${lines.length} routes · tap a stop or bus on the map</summary>
@@ -92,6 +127,7 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
     stopId = id;
     busId = null;
     k('stop').value = id;
+    syncQueueForm();
     if (focus) onSelectStop?.(id);
     render(app.sim, true);
   }
@@ -120,12 +156,73 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
     render(app.sim, true);
   });
 
+  // ---- Set waiting --------------------------------------------------------
+  function syncQueueForm() {
+    k('queueLine').hidden = stopId !== 'apu';
+    k('queueInput').value = '';
+  }
+  k('queueForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const n = Number(k('queueInput').value);
+    const key = stopId === 'apu' ? `apu:${k('queueLine').value}` : stopId;
+    if (k('queueInput').value !== '' && app.setQueue(key, n)) {
+      k('queueInput').value = '';
+      render(app.sim, true);
+    }
+  });
+
+  // ---- Edit routes & times -------------------------------------------------
+  const lineConfig = (id) => ({ ...lineById[id], ...(getOverrides?.()[id] ?? {}) });
+  function loadEditor() {
+    const id = k('edLine').value;
+    const c = lineConfig(id);
+    const o = getOverrides?.()[id] ?? {};
+    k('edEnabled').checked = o.enabled !== false;
+    k('edFleet').value = c.fleet;
+    k('edSeats').value = c.capacity;
+    k('edOut').value = c.out.join(', ');
+    k('edBack').value = c.back.join(', ');
+    k('edMsg').textContent = Object.keys(o).length ? 'Edited — differs from APU\'s timetable.' : 'APU timetable (22 Oct 2026).';
+  }
+  k('edLine').addEventListener('change', loadEditor);
+  k('editor').addEventListener('toggle', () => { if (k('editor').open) loadEditor(); });
+  k('edApply').addEventListener('click', () => {
+    const id = k('edLine').value;
+    const out = parseTimetableText(k('edOut').value);
+    const back = parseTimetableText(k('edBack').value);
+    const bad = [...out.errors, ...back.errors];
+    if (bad.length) {
+      k('edMsg').textContent = `Can't read: ${bad.join(', ')} — use HH:MM, e.g. 07:45`;
+      return;
+    }
+    const fleet = Math.min(10, Math.max(1, Math.round(Number(k('edFleet').value) || 1)));
+    const capacity = Math.min(80, Math.max(4, Math.round(Number(k('edSeats').value) || 4)));
+    const next = { ...(getOverrides?.() ?? {}) };
+    next[id] = { out: out.times, back: back.times, fleet, capacity, ...(k('edEnabled').checked ? {} : { enabled: false }) };
+    onApplyOverrides?.(next);
+    loadEditor();
+    k('edMsg').textContent = `Applied: ${out.times.length} trips to APU, ${back.times.length} from APU, ${fleet} × ${capacity}-seat.`;
+  });
+  k('edReset').addEventListener('click', () => {
+    const next = { ...(getOverrides?.() ?? {}) };
+    delete next[k('edLine').value];
+    onApplyOverrides?.(next);
+    loadEditor();
+  });
+  k('edResetAll').addEventListener('click', () => {
+    onApplyOverrides?.({});
+    loadEditor();
+  });
+
   function syncButtons() {
     root.querySelectorAll('[data-speed]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === app.speed)));
     k('pause').textContent = app.paused ? 'Play' : 'Pause';
   }
 
   function renderStop(sim) {
+    if (!sim.queues[stopId]) {
+      return `<div class="screen-top"><span>${esc(stops[stopId].name)} → APU</span></div><p class="off-note">This route is switched off in “Edit routes &amp; times”.</p>`;
+    }
     const s = stopScreen(sim, stopId);
     const line = lineById[s.lineId];
     const w = whenText(s);
@@ -179,7 +276,9 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
     const bus = busId && sim.buses.find((b) => b.id === busId);
     if (bus) {
       const line = lineById[bus.line];
-      const where = bus.state === 'driving'
+      const where = bus.detour
+        ? `rerouted: ${bus.detour.kind === 'pickup' ? 'picking up' : 'dropping'} ${bus.detour.n} at ${stops[bus.detour.stopId]?.name}`
+        : bus.state === 'driving'
         ? `heading to ${stops[bus.dest]?.name ?? bus.dest}`
         : bus.state === 'dwelling' ? `boarding at ${stops[bus.at]?.name}` : `parked at ${stops[bus.at]?.name}`;
       const trip = bus.trip
@@ -195,6 +294,7 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview }) {
     k('boarded').textContent = sim.stats.boarded;
     k('extra').textContent = sim.stats.extraBuses;
     k('late').textContent = sim.stats.lateDepartures;
+    k('reroutes').textContent = sim.stats.reroutes;
   }
 
   selectStop('apu', { focus: false });

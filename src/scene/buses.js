@@ -50,7 +50,11 @@ export function createBusLayer(scene, stops, lineColors) {
         scene.add(obj);
         pickables.push(obj.userData.body);
       }
-      if (bus.state === 'driving' && bus.path) {
+      if (bus.detour && stops[bus.detour.stopId]) {
+        // Rerouted: pulled in at another route's stop.
+        const s = stops[bus.detour.stopId];
+        obj.position.set(s.x - 10, 0, s.z - 10);
+      } else if (bus.state === 'driving' && bus.path) {
         const p = bus.path.pointAt(bus.d);
         obj.position.set(p.x, 0, p.z);
         obj.rotation.y = p.heading;
