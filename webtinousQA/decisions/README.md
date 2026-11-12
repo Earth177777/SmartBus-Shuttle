@@ -19,7 +19,7 @@ Each entry: **context → accepted option → rationale → alternatives → con
 | [D-11](#d-11) | "Ask SmartShuttle" and the Firebase live-sync card removed | Accepted |
 | [D-12](#d-12) | Branch `feat/3d-map` pushed; no `main`; version 0.1.0 unreleased | Accepted |
 | [D-13](#d-13) | Licence for the repository | **Open** |
-| [D-14](#d-14) | Deploy to GitHub Pages with GitHub Actions | Implemented by Herbert — **not yet working** |
+| [D-14](#d-14) | Deploy to GitHub Pages with GitHub Actions | Implemented by Herbert — **blocked** (GitHub account billing lock) |
 
 ## D-01
 **Context.** The demo must work from one link on any judge's laptop and must not break like the earlier Netlify prototype. **Decision.** A static Vite + three.js site; all logic runs in the browser. **Basis.** Gilbert approved the design on 2026-11-12 ("make like 3d mapping… you can use anything including three.js"). **Alternatives.** Google Photorealistic 3D Tiles (needs a billed API key, heavy); MapLibre extrusions (needs a tile source). **Consequences.** No server to run or secure; the page is a large single chunk (~530 kB gzip); everything is simulated.
@@ -61,5 +61,5 @@ Each entry: **context → accepted option → rationale → alternatives → con
 **Open.** No licence file exists. The team should choose one (and confirm APU's rights over the timetable and names) before making the repository public. Until then the README states that no reuse permission is granted.
 
 ## D-14
-**Context.** The portal needs a public demo URL. **Decision.** Build with GitHub Actions and publish `dist/` to GitHub Pages on every push to `feat/3d-map`. **Basis.** Herbert Valentino, commit `0ed77ff`, 2026-11-12 — the choice of hosting is his; it was recorded here, not decided by the documentation task. **Alternatives mentioned earlier.** Firebase Hosting (needs `firebase login`). **Status.** The first run ended in `startup_failure` and no Pages site existed when checked (2026-11-12). **Consequences.** Every push to this branch triggers a deployment attempt; the build uses pnpm 9 (the project was built on pnpm 11) and Node 20; the site uses relative asset paths (`base: './'`), which suit a project Pages URL.
+**Context.** The portal needs a public demo URL. **Decision.** Build with GitHub Actions and publish `dist/` to GitHub Pages on every push to `feat/3d-map`. **Basis.** Herbert Valentino, commit `0ed77ff`, 2026-11-12 — the choice of hosting is his; it was recorded here, not decided by the documentation task. **Alternatives mentioned earlier.** Firebase Hosting (needs `firebase login`). **Status.** Blocked. Run 1 ended in `startup_failure`; run 2 failed with "The job was not started because your account is locked due to a billing issue" (GitHub annotation, 2026-11-12), and no Pages site existed when checked. **Consequences.** Every push to this branch triggers a deployment attempt; the build uses pnpm 9 (the project was built on pnpm 11) and Node 20; the site uses relative asset paths (`base: './'`), which suit a project Pages URL.
 

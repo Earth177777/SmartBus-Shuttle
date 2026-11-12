@@ -6,11 +6,11 @@ Newest first. **Status** words are used only where evidence exists (see the [evi
 
 ## 2026-11-12
 
-### Deployment workflow added by Herbert — Implemented, **not working yet**
+### Deployment workflow added by Herbert — Implemented, **blocked**
 
 - **What:** commit `0ed77ff` adds `.github/workflows/deploy.yml` (build with pnpm 9 / Node 20, publish `dist/` to GitHub Pages on each push to `feat/3d-map`) — [D-14](../decisions/README.md#d-14).
-- **Observed (2026-11-12, via the GitHub API):** one run, `startup_failure`; no Pages site configured (404); repository public.
-- **Next:** enable Pages (source: GitHub Actions) in the repository settings, re-run, then record the live URL and whether the build passes under pnpm 9.
+- **Observed (2026-11-12, via the GitHub API):** run 1 `startup_failure`; run 2 (after the documentation push) failed — annotation: *"The job was not started because your account is locked due to a billing issue."* No Pages site configured (404); repository public. Every push to the branch triggers a run, so each will fail until the lock is cleared.
+- **Next:** the account owner resolves the billing lock; then enable Pages (source: GitHub Actions), re-run, and record the live URL and whether the build passes under pnpm 9. Fallback: deploy to Firebase Hosting or Netlify.
 
 ### Documentation updated to the Webtinous standard — Implemented (checks partly run)
 

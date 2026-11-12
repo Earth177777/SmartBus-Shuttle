@@ -64,7 +64,7 @@ flowchart LR
 | **3D scene** | Draws buildings, roads, route ribbons, buses (size scales with zoom) and stop pins with queue figures. Reads simulation state each frame. | `src/scene/*` | Source-confirmed; visually checked in the Browser pane on 2026-11-12 (not a formal test) |
 | **Panel and tabs** | Live, Impact, Logic, Analytics, Firebase, Edit; click-to-edit popovers; map clock; guided tour. | `src/ui/*`, `src/main.js` | Source-confirmed; exercised manually in the Browser pane |
 | **Live outputs** | Builds a plain-JSON snapshot every second, sends it over a same-browser `BroadcastChannel` to `phone.html`, and (only if configured) writes it to Firestore. | `src/live/*`, `src/phone.js` | Same-browser feed Source-confirmed and observed once; Firebase path **Not verified** |
-| **Deployment pipeline** | GitHub Actions builds the site and publishes `dist/` to GitHub Pages on each push to `feat/3d-map`. | `.github/workflows/deploy.yml` | Source-confirmed; **first run failed (`startup_failure`), Pages not enabled** — Not verified |
+| **Deployment pipeline** | GitHub Actions builds the site and publishes `dist/` to GitHub Pages on each push to `feat/3d-map`. | `.github/workflows/deploy.yml` | Source-confirmed; **runs failed: account billing lock; Pages not enabled** — Not verified |
 | **Webcam stop box** | Opens the camera, counts people on-device with COCO-SSD, feeds the count into a stop's queue. | `src/ui/camera.js`, `src/sim/camera-count.js` | Counting logic Test-confirmed; camera and detector **Not verified on a real camera** |
 
 ## Data ownership

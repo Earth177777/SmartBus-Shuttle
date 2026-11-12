@@ -46,7 +46,7 @@ docs/         original design and plan (history)
 
 ## Deployment (GitHub Pages)
 
-`.github/workflows/deploy.yml` builds with `pnpm build` and publishes `dist/` to GitHub Pages on every push to `feat/3d-map`. **It has not succeeded yet:** its first run failed at startup and Pages was not enabled (checked 2026-11-12). To make it work, enable *Settings → Pages → Source: GitHub Actions*, re-run the workflow, and note the pnpm 9 pin in the workflow versus pnpm 11 used here. Until then, use `pnpm preview` for a production-like local check. See [D-14](../decisions/README.md#d-14).
+`.github/workflows/deploy.yml` builds with `pnpm build` and publishes `dist/` to GitHub Pages on every push to `feat/3d-map`. **It has not succeeded yet:** on 2026-11-12 GitHub refused to start the job ("your account is locked due to a billing issue") and Pages was not enabled. To make it work, resolve the account billing lock, enable *Settings → Pages → Source: GitHub Actions*, re-run the workflow, and note the pnpm 9 pin in the workflow versus pnpm 11 used here (untested). Until then, use `pnpm preview` for a production-like local check. See [D-14](../decisions/README.md#d-14).
 
 ## Optional Firebase
 
