@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "bake": "node scripts/fetch-osm.mjs",
-    "bake:routes": "node scripts/bake-routes.mjs"
+    "bake:routes": "node scripts/bake-routes.mjs",
+    "report:impact": "node scripts/impact-report.mjs"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "4.4.0",

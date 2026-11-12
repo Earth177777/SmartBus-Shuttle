@@ -1,0 +1,10 @@
+flowchart TD
+  A["Bus on a trip passes a stop of another route<br/>(within 300 m of its road)"] --> B{"Anyone waiting there?"}
+  B -- "No" --> Z["Nothing to decide - not logged"]
+  B -- "Yes" --> C["excess = waiting - seats arriving in next 20 min<br/>detour = 2 x offRoad / 20 km/h x traffic + 60 s"]
+  C --> D{"excess >= 5 AND<br/>free seats >= 3 AND<br/>detour <= 4 min AND<br/>delay + detour <= 8 min"}
+  D -- "All true" --> E["Reroute: bus pulls in, takes min(free seats, excess)<br/>alert + decision logged YES"]
+  D -- "Any false" --> F["Bus carries on<br/>decision logged NO with failed checks"]
+  G["Line longer than one bus's seats"] --> H{"Next scheduled trip more than 10 min away<br/>AND a spare bus is free for a round trip?"}
+  H -- "Yes" --> I["Spare bus called<br/>alert + decision logged YES"]
+  H -- "No" --> J["No extra bus<br/>decision logged NO with reason"]

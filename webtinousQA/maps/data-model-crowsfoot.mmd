@@ -1,0 +1,64 @@
+erDiagram
+  ROUTES ||--o{ TRIPS : "runs"
+  ROUTES ||--o{ RIDE_EVENTS : "carries"
+  ROUTES ||--o{ GPS_EVENTS : "tracked on"
+  STOPS ||--o{ RIDE_EVENTS : "boarded at"
+  STOPS ||--o{ QUEUE_EVENTS : "observed at"
+  TRIPS ||--o{ RIDE_EVENTS : "includes"
+  TRIPS ||--o{ GPS_EVENTS : "reports"
+
+  ROUTES {
+    string route_id PK
+    string route_name
+    int planned_capacity
+    time service_start
+    time service_end
+    boolean is_active
+  }
+  STOPS {
+    string stop_id PK
+    string stop_name
+    string campus_zone
+    float latitude
+    float longitude
+    boolean is_active
+  }
+  TRIPS {
+    string trip_id PK
+    string route_id FK
+    string vehicle_id
+    timestamp scheduled_departure_ts
+    timestamp actual_departure_ts
+    timestamp actual_arrival_ts
+    date service_date
+  }
+  RIDE_EVENTS {
+    string ride_id PK
+    string anonymous_student_id
+    string route_id FK
+    string stop_id FK
+    string trip_id FK
+    timestamp check_in_ts
+    timestamp boarding_ts
+    timestamp alighting_ts
+    int seats_available
+    date service_date
+  }
+  QUEUE_EVENTS {
+    string event_id PK
+    string stop_id FK
+    string route_id
+    timestamp observed_at
+    int queue_count
+    string source
+    timestamp ingested_at
+  }
+  GPS_EVENTS {
+    string vehicle_id
+    string route_id FK
+    timestamp recorded_at
+    float latitude
+    float longitude
+    float speed_kmh
+    string trip_id FK
+  }

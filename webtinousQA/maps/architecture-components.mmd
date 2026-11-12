@@ -1,0 +1,40 @@
+flowchart LR
+  subgraph build["Build time (developer machine, needs internet)"]
+    cfg["src/data/lines.js<br/>stops, routes, APU timetable"]
+    bakeR["scripts/bake-routes.mjs"]
+    bakeO["scripts/fetch-osm.mjs"]
+    cfg --> bakeR
+    bakeR -->|"routes.json"| bakeO
+    bakeO -->|"area.json"| data
+    bakeR --> data
+    data[("src/data/*.json<br/>baked, committed")]
+  end
+  osrm(["OSRM demo server"])
+  overpass(["OpenStreetMap Overpass"])
+  bakeR -.->|"HTTPS"| osrm
+  bakeO -.->|"HTTPS"| overpass
+
+  subgraph browser["Browser (static site, no backend)"]
+    sim["src/sim<br/>simulation, rules, telemetry,<br/>compare, optimize"]
+    scene["src/scene<br/>three.js map, buses, stops"]
+    ui["src/ui<br/>panel, tabs, popovers, tour"]
+    live["src/live<br/>snapshot, channel, Firebase writer"]
+    cam["src/ui/camera.js<br/>TensorFlow.js person count"]
+    store[("localStorage<br/>route edits, tour seen")]
+    phone["phone.html<br/>phone card"]
+    data --> sim
+    sim --> scene
+    sim --> ui
+    ui -->|"edits"| sim
+    ui <--> store
+    cam -->|"people count"| sim
+    sim --> live
+    live -->|"BroadcastChannel (same browser)"| phone
+  end
+
+  subgraph google["Optional cloud (not connected by default)"]
+    fs[("Firestore live/state")]
+  end
+  live -.->|"only if VITE_FIREBASE_* set"| fs
+  fs -.-> phone
+  tfhub(["Model host (Google)"]) -.->|"model download"| cam

@@ -1,5 +1,7 @@
 # SmartShuttle 3D Map + Mock Buses — Design
 
+> **Status: historical record (2026-11-12).** This is the original design approved before building. It has been **superseded in part** — see [D-03 to D-08 and D-11](../../../webtinousQA/decisions/README.md) (real OSRM routes, APU's real timetable, nine routes instead of three, generalised rerouting, new tabs and features). **Current behaviour is documented in** [RULES.md](../../../webtinousQA/documentation/RULES.md), [ARCHITECTURE.md](../../../webtinousQA/documentation/ARCHITECTURE.md) and the [QA index](../../../webtinousQA/README.md). The original text below is unchanged.
+
 Approved by Gilbert, 12 Nov 2026.
 
 ## Intent
