@@ -7,7 +7,7 @@ const BBOX = { s: 3.05, w: 101.688, n: 3.062, e: 101.705 };
 const STOPS = {
   apu: { lat: 3.0553, lon: 101.7006, name: 'APU Campus' },
   lrt: { lat: 3.0583, lon: 101.6922, name: 'LRT Bukit Jalil' },
-  parkhill: { lat: 3.0561, lon: 101.6957, name: 'Parkhill Residence' },
+  parkhill: { lat: 3.056656, lon: 101.695973, name: 'Parkhill Residence' },
 };
 const ROAD_KINDS = new Set([
   'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
@@ -49,7 +49,7 @@ for (const el of data.elements) {
   if (t.building) {
     buildings.push({ pts: toPts(el.geometry), h: r1(heightOf(t, el.id)) });
   } else if (ROAD_KINDS.has(t.highway)) {
-    if (t.highway === 'service' && t.service && t.service !== 'driveway') continue;
+    if (t.highway === 'service' && t.service === 'parking_aisle') continue;
     roads.push({ pts: toPts(el.geometry), kind: t.highway, ...(t.oneway === 'yes' ? { oneway: true } : {}) });
   }
 }
