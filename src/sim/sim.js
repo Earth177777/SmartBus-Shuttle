@@ -10,6 +10,7 @@ import { needsExtraBus } from './rules.js';
 import { corridorStops, explainReroute, detourSec, REROUTE } from './reroute.js';
 import { createTelemetry, record, routeAgg, tsISO, nextId } from './telemetry.js';
 import { unproject } from '../geo.js';
+import { scenarioById } from './scenarios.js';
 
 export const SERVICE_START = 6.5 * 3600; // 06:30
 export const SERVICE_END = 22.5 * 3600; // 22:30
@@ -35,10 +36,14 @@ function mulberry32(seed) {
   };
 }
 
-const travelFactor = (clock) => trafficFactor(clock) * BUS_SLOWDOWN;
+// Travel-time multiplier: KL traffic profile × scenario × buses being slower than cars.
+export const simTraffic = (sim, clock) => trafficFactor(clock) * (sim.scenario?.traffic(clock) ?? 1);
+const travelFactor = (sim, clock) => simTraffic(sim, clock) * BUS_SLOWDOWN;
 const backKey = (lineId) => `apu:${lineId}`;
 
-export function createSim({ lines, routes, seed = 1, startClock = SERVICE_START, serviceDate = SERVICE_DATE }) {
+// smart: which SmartShuttle features run. Off = how APU runs today (for the comparison).
+export const SMART_ALL = { extraBus: true, reroute: true };
+export function createSim({ lines, routes, seed = 1, startClock = SERVICE_START, serviceDate = SERVICE_DATE, scenario = 'normal', smart = SMART_ALL }) {
   const sim = {
     clock: SERVICE_START,
     running: true,
@@ -49,10 +54,12 @@ export function createSim({ lines, routes, seed = 1, startClock = SERVICE_START,
     queues: {},
     alerts: [],
     decisions: [], // newest first, for the Logic tab
+    scenario: scenarioById(scenario),
+    smart: { ...SMART_ALL, ...smart },
     telemetry: createTelemetry(serviceDate),
     nextQueueObs: SERVICE_START,
     nextGps: SERVICE_START,
-    stats: { boarded: 0, extraBuses: 0, lateDepartures: 0, reroutes: 0, dropped: 0 },
+    stats: { boarded: 0, extraBuses: 0, lateDepartures: 0, reroutes: 0, dropped: 0, leftBehind: 0, waitedOver30: 0, busKm: 0, emptySeatKm: 0 },
     stopNames: Object.fromEntries(Object.entries(routes.stops).map(([id, st]) => [id, st.name])),
   };
   const routeById = Object.fromEntries(routes.lines.map((r) => [r.id, r]));
@@ -103,7 +110,7 @@ const legsFor = (L, dir) => (dir === 'out' ? L.out : L.back);
 export function estimateTripSec(sim, lineId, dir, clock) {
   const L = sim.lines[lineId];
   const legs = legsFor(L, dir);
-  return legs.reduce((s, l) => s + l.path.duration, 0) * travelFactor(clock) + DWELL_SEC * legs.length;
+  return legs.reduce((s, l) => s + l.path.duration, 0) * travelFactor(sim, clock) + DWELL_SEC * legs.length;
 }
 
 function tripLegs(L, dir, trip) {
@@ -168,6 +175,7 @@ function takeRiders(sim, bus, qKey, n) {
     tel.agg.waitSum += wait;
     tel.agg.waitN++;
     tel.agg.waitMax = Math.max(tel.agg.waitMax, wait);
+    if (wait > 30 * 60) sim.stats.waitedOver30++;
     bus.riders.push(record(tel, 'ride_events', {
       ride_id: nextId(tel, 'ride'),
       anonymous_student_id: nextId(tel, 'anon'),
@@ -182,6 +190,7 @@ function takeRiders(sim, bus, qKey, n) {
     }));
   }
   q.queue -= k;
+  if (q.flagged) q.flagged = Math.max(0, Math.min(q.flagged, q.queue));
   bus.load += k;
   sim.stats.boarded += k;
   routeAgg(tel, bus.line).boarded += k;
@@ -233,14 +242,14 @@ function considerPickup(sim, bus, entry) {
   const coming = seatsComing(sim, L2, entry.stopId, 'out');
   const excess = queue - coming;
   const freeSeats = bus.capacity - bus.load;
-  const detour = detourSec(entry.off, travelFactor(sim.clock));
+  const detour = detourSec(entry.off, travelFactor(sim, sim.clock));
   const delaySec = (bus.trip?.lateSec ?? 0) + (bus.delaySec ?? 0);
   const verdict = explainReroute({ excess, freeSeats, detourSec: detour, delaySec });
   // Only log stops where someone is actually waiting; empty stops are not decisions.
   if (queue > 0) {
     logDecision(sim, {
       kind: 'pickup', busId: bus.id, lineId: L2.cfg.id, stopId: entry.stopId, ok: verdict.ok, checks: verdict.checks,
-      inputs: { queue, seatsComing: coming, excess, freeSeats, detourSec: Math.round(detour), delaySec: Math.round(delaySec), offM: Math.round(entry.off), traffic: +travelFactor(sim.clock).toFixed(2) },
+      inputs: { queue, seatsComing: coming, excess, freeSeats, detourSec: Math.round(detour), delaySec: Math.round(delaySec), offM: Math.round(entry.off), traffic: +travelFactor(sim, sim.clock).toFixed(2) },
     });
   }
   if (!verdict.ok) return false;
@@ -264,13 +273,13 @@ function shareAtApu(sim, bus) {
       const coming = seatsComing(sim, L2, 'apu', 'back');
       const excess = q.queue - coming;
       const freeSeats = bus.capacity - bus.load;
-      const detour = detourSec(entry.off, travelFactor(sim.clock));
+      const detour = detourSec(entry.off, travelFactor(sim, sim.clock));
       const delaySec = (bus.trip?.lateSec ?? 0) + (bus.delaySec ?? 0);
       const verdict = explainReroute({ excess, freeSeats, detourSec: detour, delaySec });
       if (q.queue > 0) {
         logDecision(sim, {
           kind: 'share', busId: bus.id, lineId: L2.cfg.id, stopId: entry.stopId, ok: verdict.ok, checks: verdict.checks,
-          inputs: { queue: q.queue, seatsComing: coming, excess, freeSeats, detourSec: Math.round(detour), delaySec: Math.round(delaySec), offM: Math.round(entry.off), traffic: +travelFactor(sim.clock).toFixed(2) },
+          inputs: { queue: q.queue, seatsComing: coming, excess, freeSeats, detourSec: Math.round(detour), delaySec: Math.round(delaySec), offM: Math.round(entry.off), traffic: +travelFactor(sim, sim.clock).toFixed(2) },
         });
       }
       if (!verdict.ok) continue;
@@ -317,6 +326,7 @@ function dispatchLine(sim, L) {
   }
 
   // 3. Crowd-aware: a line longer than one bus, with the next trip far away, gets a spare bus.
+  if (!sim.smart.extraBus) return;
   if (buses.some((b) => b.trip?.extra)) return;
   for (const dir of ['out', 'back']) {
     const origin = originOf(L, dir);
@@ -384,11 +394,22 @@ function finalStop(bus) {
 
 function board(sim, bus, qKey) {
   const seats = bus.trip?.limited ? Math.floor(bus.capacity * LIMITED_SHARE) : bus.capacity;
-  takeRiders(sim, bus, qKey, Math.max(0, seats - bus.load));
+  const k = takeRiders(sim, bus, qKey, Math.max(0, seats - bus.load));
+  // Whoever is still in line when a full bus pulls away was left behind (counted once each).
+  sim.stats.leftBehind += newlyLeftBehind(sim.queues[qKey], k);
+}
+
+// q.flagged = people at the front of the line already counted as left behind.
+// After a bus took `boarded` from the front, count only those not counted before.
+export function newlyLeftBehind(q, boarded) {
+  const stillFlagged = Math.max(0, (q.flagged ?? 0) - boarded);
+  const fresh = Math.max(0, q.queue - stillFlagged);
+  q.flagged = q.queue;
+  return fresh;
 }
 
 function stepBus(sim, bus, dt) {
-  const factor = travelFactor(sim.clock);
+  const factor = travelFactor(sim, sim.clock);
   for (let guard = 0; guard < 24 && dt > 1e-9 && bus.legs.length; guard++) {
     if (bus.detour) {
       const take = Math.min(dt, bus.detour.left);
@@ -417,12 +438,15 @@ function stepBus(sim, bus, dt) {
         if (leg.board) board(sim, bus, leg.board);
         bus.state = 'idle';
         bus.legs.shift();
-        if (leg.stop === 'apu' && bus.trip?.dir === 'back') shareAtApu(sim, bus);
+        if (leg.stop === 'apu' && bus.trip?.dir === 'back' && sim.smart.reroute) shareAtApu(sim, bus);
       }
     } else {
       if (bus.state !== 'driving') {
         startTrip(bus, leg.path, leg.dest);
         bus.at = null;
+        const km = leg.path.length / 1000;
+        sim.stats.busKm += km;
+        if (bus.trip) sim.stats.emptySeatKm += (bus.capacity - bus.load) * km;
         // First passenger leg (deadhead legs carry neither side nor share) = actual departure.
         if (bus.tripDoc && !bus.tripDoc.actual_departure_ts && (leg.side || leg.share)) {
           bus.tripDoc.actual_departure_ts = tsISO(sim.telemetry.serviceDate, sim.clock);
@@ -431,7 +455,7 @@ function stepBus(sim, bus, dt) {
       const take = Math.min(dt, (bus.path.duration - bus.tt) * factor);
       dt -= take;
       advanceBus(bus, take, factor);
-      if (bus.trip && leg.side) {
+      if (bus.trip && leg.side && sim.smart.reroute) {
         while (leg.sideIdx < leg.side.length && leg.side[leg.sideIdx].d <= bus.d) {
           const started = considerPickup(sim, bus, leg.side[leg.sideIdx++]);
           if (started) break;
@@ -477,7 +501,8 @@ function addArrivals(sim, dt) {
       continue;
     }
     const share = q.dir === 'out' ? 1 / L.cfg.pickups.length : 1;
-    q.latent = (q.latent ?? 0) + (demandPerMinute({ demand: L.peak[q.dir] }, q.dir, sim.clock) / 60) * share * dt * (0.5 + sim.rng());
+    const scen = sim.scenario.demand(L.cfg.id, q.dir, sim.clock);
+    q.latent = (q.latent ?? 0) + (demandPerMinute({ demand: L.peak[q.dir] }, q.dir, sim.clock) / 60) * scen * share * dt * (0.5 + sim.rng());
     const depAt = next.t + (q.dir === 'out' ? pickupOffsetSec(L.cfg, q.stopId) : 0);
     const timeLeft = depAt - sim.clock;
     if (timeLeft > ARRIVE_WINDOW_SEC) continue;
@@ -534,7 +559,7 @@ function observe(sim) {
         recorded_at: tsISO(tel.serviceDate, t),
         latitude: +lat.toFixed(6),
         longitude: +lon.toFixed(6),
-        speed_kmh: +((b.path.length / Math.max(b.path.duration, 1)) * 3.6 / travelFactor(t)).toFixed(1),
+        speed_kmh: +((b.path.length / Math.max(b.path.duration, 1)) * 3.6 / travelFactor(sim, t)).toFixed(1),
         trip_id: b.tripDoc?.trip_id ?? null,
       });
     }
@@ -571,7 +596,7 @@ function nextBusEta(sim, L, stop) {
     const pending = b.legs.findIndex((l) => l.type === 'dwell' && l.stop === stop);
     if (pending === -1) continue;
     if (b.state === 'dwelling' && b.at === stop) return 0;
-    if (pending <= 1 && b.state === 'driving') best = Math.min(best, etaSeconds(b, travelFactor(sim.clock)));
+    if (pending <= 1 && b.state === 'driving') best = Math.min(best, etaSeconds(b, travelFactor(sim, sim.clock)));
   }
   return best;
 }

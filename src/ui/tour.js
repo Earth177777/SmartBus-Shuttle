@@ -83,6 +83,45 @@ export function createTour({ panel, world, app }) {
       },
     },
     {
+      element: '.scenarios',
+      popover: {
+        title: 'One-click scenarios',
+        description:
+          'What if it rains? Exam week? A match at Bukit Jalil stadium? The LRT is delayed? Each scenario changes crowds and traffic, and you watch SmartShuttle adapt — extra buses, reroutes, longer lines.',
+        side: 'left',
+      },
+      onHighlightStarted: tab('live'),
+    },
+    {
+      element: '[data-k="camera"]',
+      popover: {
+        title: 'Real stop box: your webcam',
+        description:
+          'Our roadmap says <i>“laptop webcam as the stop box”</i>. Click this, allow the camera, and step into view: a person detector running <b>on this laptop</b> counts the line and feeds the number into the stop. Only the count is used — no photos stored or sent.',
+        side: 'top',
+      },
+      onHighlightStarted: tab('live'),
+    },
+    {
+      element: '[data-k="phone"]',
+      popover: {
+        title: 'Phone view (APSpace card)',
+        description:
+          'What a student sees in APSpace: their stop\'s next bus, the line and how full it is, updating live. Opens beside this demo; with Firebase connected, scan the QR code to follow from a real phone.',
+        side: 'top',
+      },
+    },
+    {
+      element: '[data-pane="impact"]',
+      popover: {
+        title: 'Impact: today vs SmartShuttle',
+        description:
+          'The same weekday, the same students, run twice: as APU runs it today (fixed timetable only), and with SmartShuttle (extra buses + rerouting). See the change in average wait, people who waited over 30 min, people left behind by a full bus, and bus-km driven. “Compare all days” runs every scenario.',
+        side: 'left',
+      },
+      onHighlightStarted: tab('impact'),
+    },
+    {
       element: '[data-pane="logic"]',
       popover: {
         title: 'Logic: how every decision is made',

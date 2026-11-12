@@ -254,3 +254,38 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
   .hud-time { font-size: 18px; }
   .hud-date { display: none; }
 }
+
+/* Scenarios */
+.scenarios { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.scen { flex: none; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.scen[aria-pressed='true'] { background: var(--text); color: #fff; border-color: var(--text); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions .ghost { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Impact */
+.impact { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.impact-head { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+.impact-head b.good { color: #15803d; } .impact-head b.bad { color: #b91c1c; } .impact-head b.cost { color: var(--muted); }
+.impact-bar { position: relative; height: 20px; border-radius: 6px; background: #f1f5f9; overflow: hidden; margin-top: 3px; }
+.impact-bar span { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
+.impact-bar.today span { background: #cbd5e1; }
+.impact-bar.smart span { background: #86efac; }
+.impact-bar em { position: relative; font-style: normal; font-size: 11px; padding-left: 8px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.mini td.good { color: #15803d; font-weight: 700; }
+
+/* Phone popover */
+.qr svg { width: 180px; height: 180px; display: block; margin: 0 auto; }
+.open-phone { display: inline-flex; gap: 6px; align-items: center; justify-content: center; text-decoration: none; padding: 7px 12px; }
+
+/* Camera stop box */
+.camera-box { position: fixed; left: 16px; bottom: 44px; z-index: 6; width: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18); padding: 10px; display: grid; gap: 8px; }
+.camera-box[hidden] { display: none; }
+.camera-box header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.camera-box header b { display: inline-flex; gap: 6px; align-items: center; }
+.cam-view { position: relative; border-radius: 10px; overflow: hidden; background: #0b1220; aspect-ratio: 4 / 3; }
+.cam-view video, .cam-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.cam-row { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.cam-count { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.cam-count b { font-size: 28px; font-variant-numeric: tabular-nums; }
+.cam-note { margin: 0; font-size: 11px; color: var(--muted); }
+@media (max-width: 767px) { .camera-box { width: calc(100% - 32px); bottom: auto; top: 64px; } }

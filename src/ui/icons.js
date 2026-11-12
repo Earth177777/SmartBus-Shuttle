@@ -16,6 +16,16 @@ import {
   Tick02Icon,
   TrafficLightIcon,
   MapsLocation01Icon,
+  BookOpen01Icon,
+  CloudAngledRainIcon,
+  FootballIcon,
+  Train01Icon,
+  Camera01Icon,
+  SmartPhone01Icon,
+  QrCodeIcon,
+  ChartIncreaseIcon,
+  CloudUploadIcon,
+  StopIcon,
 } from '@hugeicons/core-free-icons';
 
 const ICONS = {
@@ -35,6 +45,16 @@ const ICONS = {
   yes: Tick02Icon,
   traffic: TrafficLightIcon,
   map: MapsLocation01Icon,
+  exam: BookOpen01Icon,
+  rain: CloudAngledRainIcon,
+  stadium: FootballIcon,
+  train: Train01Icon,
+  camera: Camera01Icon,
+  phone: SmartPhone01Icon,
+  qr: QrCodeIcon,
+  impact: ChartIncreaseIcon,
+  cloud: CloudUploadIcon,
+  stop: StopIcon,
 };
 
 const kebab = (s) => s.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);

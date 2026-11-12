@@ -10,6 +10,11 @@ import { createBusLayer } from './scene/buses.js';
 import { createStopLayer } from './scene/stops.js';
 import { createPanel } from './ui/panel.js';
 import { createTour } from './ui/tour.js';
+import { createCameraBox } from './ui/camera.js';
+import { buildSnapshot } from './live/snapshot.js';
+import { createChannel } from './live/channel.js';
+import { createFirebaseWriter } from './live/firebase-sync.js';
+import QRCode from 'qrcode';
 
 const MAX_REAL_DT = 0.25; // seconds; a background tab must not jump the sim forward
 const CLICK_SLOP_PX = 6; // a drag longer than this orbits the camera instead of picking
@@ -44,8 +49,9 @@ function saveOverrides() {
 }
 
 const newSeed = () => Math.floor(Math.random() * 1e6);
+let scenarioId = 'normal';
 const makeSim = (startClock = SERVICE_START) =>
-  createSim({ lines: applyOverrides(LINES, overrides), routes, seed: newSeed(), startClock });
+  createSim({ lines: applyOverrides(LINES, overrides), routes, seed: newSeed(), startClock, scenario: scenarioId });
 const app = {
   sim: makeSim(7 * 3600),
   speed: 10,
@@ -59,6 +65,10 @@ const app = {
   setQueue(key, n) {
     return setQueue(this.sim, key, n);
   },
+  setScenario(id) {
+    scenarioId = id;
+    this.sim = makeSim(this.sim.clock); // replay today up to now under the new scenario
+  },
   routes,
 };
 function syncLineVisibility() {
@@ -67,6 +77,26 @@ function syncLineVisibility() {
 syncLineVisibility();
 app.world = world;
 window.smartshuttle = app; // handy for debugging in the console
+
+// ---- Live outputs: phone card (same browser) and Firebase (any device) ----------
+const activeLines = () => LINES.filter((l) => app.sim.lines[l.id]);
+const snapshot = () => buildSnapshot(app.sim, activeLines(), stops);
+const channel = createChannel();
+const firebase = createFirebaseWriter();
+const PUBLISH_MS = 1000;
+function publish() {
+  const snap = snapshot();
+  channel?.postMessage({ type: 'snapshot', data: snap });
+  firebase.push(snap);
+}
+if (channel) channel.onmessage = (e) => { if (e.data?.type === 'hello') publish(); };
+setInterval(publish, PUBLISH_MS);
+
+const phoneUrl = new URL('phone.html', window.location.href).href;
+let qrSvg = '';
+QRCode.toString(phoneUrl, { type: 'svg', margin: 1, width: 180 }).then((svg) => { qrSvg = svg; }).catch(() => {});
+
+const camera = createCameraBox(app, { lines: LINES, stops });
 
 const panel = createPanel(app, {
   lines: LINES,
@@ -81,6 +111,11 @@ const panel = createPanel(app, {
     app.jumpTo(app.sim.clock); // replay today up to now with the edited routes
   },
   onTour: () => tour.start(),
+  onScenario: (id) => app.setScenario(id),
+  onCamera: (stopId) => camera.open(stopId),
+  phoneUrl,
+  qrSvg: () => qrSvg,
+  firebase,
 });
 const tour = createTour({ panel, world, app });
 tour.startIfFirstVisit();

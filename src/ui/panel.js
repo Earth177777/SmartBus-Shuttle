@@ -9,16 +9,20 @@ import { icon } from './icons.js';
 import { renderLogic } from './logic.js';
 import { renderAnalytics, renderOptimizerResult } from './analytics.js';
 import { renderFirebase, exportTelemetry } from './firebase.js';
+import { renderImpact, renderAllScenarios, compareAll } from './impact.js';
+import { compareDays } from '../sim/compare.js';
+import { SCENARIOS } from '../sim/scenarios.js';
 
 const SPEEDS = [1, 10, 60];
 const TABS = [
   ['live', 'Live', 'bus'],
+  ['impact', 'Impact', 'impact'],
   ['logic', 'Logic', 'logic'],
   ['analytics', 'Analytics', 'analytics'],
   ['firebase', 'Firebase', 'database'],
   ['edit', 'Edit', 'settings'],
 ];
-const UI_REFRESH_MS = { live: 200, logic: 500, analytics: 700, firebase: 700, edit: Infinity };
+const UI_REFRESH_MS = { live: 200, impact: Infinity, logic: 500, analytics: 700, firebase: 700, edit: Infinity };
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const hhmm = (sec) => `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`;
@@ -34,7 +38,7 @@ function whenText(s) {
 }
 
 // lines: LINES config; stops: { id: {name} }
-export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOverrides, onApplyOverrides, onTour }) {
+export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOverrides, onApplyOverrides, onTour, onScenario, onCamera, phoneUrl, qrSvg, firebase }) {
   const lineById = Object.fromEntries(lines.map((l) => [l.id, l]));
   const pickupStops = lines.flatMap((l) => l.pickups.map((id) => ({ id, line: l })));
 
@@ -62,7 +66,14 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOv
         </select>
         <button class="ghost small" data-k="overview" title="Show the whole network">Overview</button>
       </div>
+      <div class="scenarios" role="group" aria-label="Scenario">
+        ${SCENARIOS.map((sc) => `<button class="scen" data-scenario="${sc.id}" title="${esc(sc.description)}">${icon(sc.icon, 14)}<span>${esc(sc.name)}</span></button>`).join('')}
+      </div>
       <section class="screen" data-k="screen" aria-live="polite"></section>
+      <div class="actions">
+        <button class="ghost small" data-k="camera">${icon('camera', 14)} Camera stop box</button>
+        <button class="ghost small" data-k="phone">${icon('phone', 14)} Phone view</button>
+      </div>
       <p class="hint">Tip: click any <b>In line</b> number to set how many people are waiting, or the clock to change the time.</p>
       <section class="bus-info" data-k="busInfo" hidden></section>
       <section class="stats" data-k="stats">
@@ -77,6 +88,19 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOv
         </div>
         <button data-k="pause" class="ghost">Pause</button>
       </section>
+    </div>
+
+    <div class="tab" data-pane="impact" hidden>
+      <section class="card">
+        <h3>Today vs SmartShuttle</h3>
+        <p class="muted">The same weekday run twice — as APU runs it now, and with SmartShuttle — for the scenario picked on the Live tab.</p>
+        <div class="editor-row">
+          <button class="primary small" data-k="runImpact">${icon('impact', 14)} Run comparison</button>
+          <button class="ghost small" data-k="runAll">Compare all days</button>
+        </div>
+      </section>
+      <div class="tab" data-k="impactBody"></div>
+      <div data-k="impactAll"></div>
     </div>
 
     <div class="tab" data-pane="logic" hidden><div class="tab" data-k="logicBody"></div></div>
@@ -251,6 +275,46 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOv
     });
   });
 
+  // ---- Scenarios ---------------------------------------------------------------
+  function syncScenario() {
+    root.querySelectorAll('[data-scenario]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.scenario === app.sim.scenario.id)));
+  }
+  root.querySelectorAll('[data-scenario]').forEach((b) =>
+    b.addEventListener('click', () => {
+      onScenario?.(b.dataset.scenario);
+      syncScenario();
+      impactCache = null;
+      render(app.sim, true);
+    }),
+  );
+
+  // ---- Camera & phone ------------------------------------------------------------
+  k('camera').addEventListener('click', () => onCamera?.(stopId === 'apu' ? 'lrt' : stopId));
+  k('phone').addEventListener('click', () => {
+    const pop = openPopover(k('phone'), { label: 'Phone view', type: 'number', onSubmit: () => true });
+    pop.querySelector('.popover-row').outerHTML = `<div class="qr">${(typeof qrSvg === 'function' ? qrSvg() : qrSvg) ?? ''}</div>`;
+    pop.insertAdjacentHTML('beforeend', `<a class="primary small open-phone" href="${phoneUrl}" target="_blank" rel="noopener">${icon('phone', 14)} Open phone view</a>
+      <p class="popover-hint">${firebase?.status.enabled ? 'Scan to follow live on a phone (via Firebase).' : 'Opens beside this demo and follows it live. To follow from a real phone, connect Firebase.'}</p>`);
+  });
+
+  // ---- Impact ----------------------------------------------------------------------
+  let impactCache = null;
+  const activeCfgs = () => lines.filter((l) => app.sim.lines[l.id]).map((l) => app.sim.lines[l.id].cfg);
+  function runImpact() {
+    k('impactBody').innerHTML = '<p class="muted">Running the day twice…</p>';
+    setTimeout(() => {
+      impactCache = compareDays(activeCfgs(), app.routes, { seed: 4, scenario: app.sim.scenario.id });
+      k('impactBody').innerHTML = renderImpact(impactCache);
+    }, 20);
+  }
+  k('runImpact').addEventListener('click', runImpact);
+  k('runAll').addEventListener('click', () => {
+    k('impactAll').innerHTML = '<p class="muted">Running every scenario twice…</p>';
+    setTimeout(() => {
+      k('impactAll').innerHTML = `<section class="card"><h3>Every scenario</h3>${renderAllScenarios(compareAll(activeCfgs(), app.routes, 4))}</section>`;
+    }, 20);
+  });
+
   // ---- Firebase tab ------------------------------------------------------------
   k('fbCollection').addEventListener('change', () => render(app.sim, true));
   k('fbExport').addEventListener('click', () => exportTelemetry(app.sim));
@@ -404,10 +468,12 @@ export function createPanel(app, { lines, stops, onSelectStop, onOverview, getOv
     else if (tab === 'logic') k('logicBody').innerHTML = renderLogic(sim, { lines, lineById });
     else if (tab === 'analytics') k('analyticsBody').innerHTML = renderAnalytics(sim, { lineById });
     else if (tab === 'firebase') k('firebaseBody').innerHTML = renderFirebase(sim, { collection: k('fbCollection').value });
+    else if (tab === 'impact' && !impactCache && force) runImpact();
   }
 
   selectTab('live');
   selectStop('apu', { focus: false });
   syncButtons();
+  syncScenario();
   return { render, selectStop, selectBus, selectTab, root, hud };
 }

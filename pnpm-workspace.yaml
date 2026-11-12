@@ -1,2 +1,5 @@
 allowBuilds:
   esbuild: false
+  "@firebase/util": false
+  core-js: false
+  protobufjs: false

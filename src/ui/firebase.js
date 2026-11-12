@@ -54,7 +54,7 @@ export function renderFirebase(sim, { collection }) {
   const docs = tel.recent[collection].slice(0, 3);
   return `
     <section class="card">
-      <p class="sync"><span class="dot"></span>Simulated sync · Firebase project <code>smart-shuttle-apu</code> → BigQuery dataset <code>smartshuttle</code> (not connected in this demo)</p>
+      <p class="sync">Documents in the team's BigQuery schema (dataset <code>smartshuttle</code>). Counts are from the simulation; with live sync on, the newest are written to Firestore.</p>
       <table class="mini"><thead><tr><th>Collection</th><th class="num">Docs today</th></tr></thead><tbody>${counts}</tbody></table>
     </section>
     <section class="card">
