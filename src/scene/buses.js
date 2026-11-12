@@ -62,12 +62,11 @@ export function createBusLayer(scene, stops) {
         const p = bus.path.pointAt(bus.d);
         obj.position.set(p.x, 0, p.z);
         obj.rotation.y = p.heading;
-      } else if (bus.atStop && !obj.userData.placed) {
+      } else if (bus.atStop) {
+        // Parked: always snap to the current stop (also after "Restart day" reuses ids).
         const s = stops[bus.atStop];
         obj.position.set(s.x, 0, s.z);
       }
-      obj.userData.placed = bus.state !== 'driving' && !!bus.atStop;
-      if (bus.state === 'driving') obj.userData.placed = false;
 
       if (bus.load !== obj.userData.lastLoad) {
         const frac = bus.load / bus.capacity;
