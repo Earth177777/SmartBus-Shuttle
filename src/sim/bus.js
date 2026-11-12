@@ -1,15 +1,17 @@
-export const BUS_SPEED_MPS = 25 / 3.6; // 25 km/h
-export const BUS_CAPACITY = 40;
+import { BUS_SPEED_MPS, BUS_CAPACITY } from './constants.js';
 
-export function createBus(id, line) {
+export { BUS_SPEED_MPS, BUS_CAPACITY };
+
+export function createBus(id, line, capacity = BUS_CAPACITY) {
   return {
     id,
-    line, // 'lrt' | 'parkhill'
+    line,
     state: 'idle', // 'idle' | 'driving' | 'dwelling'
     path: null,
-    d: 0,
+    d: 0, // metres along the path
+    tt: 0, // free-flow seconds along the path
     load: 0,
-    capacity: BUS_CAPACITY,
+    capacity,
     dwellLeft: 0,
     dest: null,
     extra: false,
@@ -19,22 +21,25 @@ export function createBus(id, line) {
 export function startTrip(bus, path, dest) {
   bus.path = path;
   bus.d = 0;
+  bus.tt = 0;
   bus.dest = dest;
   bus.state = 'driving';
 }
 
-// Move along the path; returns 'arrived' exactly once, on the step that reaches the end.
-export function advanceBus(bus, dtSec) {
+// Move along the path; `factor` stretches travel time (traffic). Returns 'arrived' exactly once.
+export function advanceBus(bus, dtSec, factor = 1) {
   if (bus.state !== 'driving' || !bus.path) return null;
-  bus.d = Math.min(bus.d + BUS_SPEED_MPS * dtSec, bus.path.length);
-  if (bus.d >= bus.path.length) {
+  bus.tt = Math.min(bus.tt + dtSec / factor, bus.path.duration);
+  bus.d = bus.path.distanceAtTime(bus.tt);
+  if (bus.tt >= bus.path.duration) {
+    bus.d = bus.path.length;
     bus.state = 'idle';
     return 'arrived';
   }
   return null;
 }
 
-export function etaSeconds(bus) {
-  const remaining = bus.state === 'driving' && bus.path ? bus.path.length - bus.d : 0;
-  return remaining / BUS_SPEED_MPS + (bus.state === 'dwelling' ? bus.dwellLeft : 0);
+export function etaSeconds(bus, factor = 1) {
+  const remaining = bus.state === 'driving' && bus.path ? (bus.path.duration - bus.tt) * factor : 0;
+  return remaining + (bus.state === 'dwelling' ? bus.dwellLeft : 0);
 }

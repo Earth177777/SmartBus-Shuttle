@@ -34,6 +34,26 @@ describe('bus movement', () => {
     expect(etaSeconds(bus)).toBeCloseTo(72, 0);
   });
 
+  it('moves at half speed in 2× traffic', () => {
+    const bus = createBus('L1', 'lrt');
+    startTrip(bus, km(), 'apu');
+    advanceBus(bus, 144, 2);
+    expect(bus.d).toBeCloseTo(500, 0);
+    expect(etaSeconds(bus, 2)).toBeCloseTo(144, 0);
+  });
+
+  it('follows real per-segment travel times when the path has them', () => {
+    // 1 km in two halves: first half slow (100 s), second fast (20 s).
+    const path = makePolyline([[0, 0], [500, 0], [1000, 0]], [0, 100, 120]);
+    expect(path.duration).toBe(120);
+    const bus = createBus('L1', 'lrt');
+    startTrip(bus, path, 'apu');
+    advanceBus(bus, 50);
+    expect(bus.d).toBeCloseTo(250, 6);
+    advanceBus(bus, 60);
+    expect(bus.d).toBeCloseTo(750, 6);
+  });
+
   it('adds remaining dwell to ETA', () => {
     const bus = createBus('L1', 'lrt');
     bus.state = 'dwelling';

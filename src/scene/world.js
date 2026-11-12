@@ -9,9 +9,6 @@ export const COLORS = {
   campus: 0x9fd3c7,
   road: 0xc3c9d2,
   majorRoad: 0xaab2bd,
-  lrt: 0x2563eb,
-  parkhill: 0xf59e0b,
-  extra: 0x8b5cf6,
 };
 
 const ROAD_WIDTH = {
@@ -22,8 +19,9 @@ const ROAD_WIDTH = {
 const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary']);
 const CAMPUS_RADIUS = 260; // metres around APU tinted as campus
 const DESKTOP_MIN_WIDTH = 768; // matches the CSS breakpoint for the side panel
-const PANEL_WIDTH = 376; // panel 360 px + 16 px gutter
+const PANEL_WIDTH = 416; // panel 400 px + 16 px gutter
 const MOBILE_SHEET_SHARE = 0.48; // matches .panel max-height on phones
+const ROUTE_WIDTH = { out: 16, back: 7 };
 
 // Flat ribbon along a polyline at height y.
 export function ribbonGeometry(pts, width, y) {
@@ -91,7 +89,8 @@ export function routeLine(polyline, color, y = 0.4, width = 4) {
   );
 }
 
-export function createWorld(container, area, routes) {
+// lines: [{ color: '#rrggbb', out: [[x, z]...][], back: [[x, z]...][] }]
+export function createWorld(container, area, lines) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
@@ -99,7 +98,7 @@ export function createWorld(container, area, routes) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.sky);
-  scene.fog = new THREE.Fog(COLORS.sky, 3000, 6500);
+  scene.fog = new THREE.Fog(COLORS.sky, 9000, 20000);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c0c8, 1.6));
   const sun = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -107,7 +106,7 @@ export function createWorld(container, area, routes) {
   scene.add(sun);
 
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(6000, 6000),
+    new THREE.PlaneGeometry(40000, 40000),
     new THREE.MeshLambertMaterial({ color: COLORS.ground }),
   );
   ground.rotation.x = -Math.PI / 2;
@@ -118,37 +117,56 @@ export function createWorld(container, area, routes) {
     const m = roadsMesh(area.roads, major);
     if (m) scene.add(m);
   }
-  scene.add(routeLine(routes.lrt_apu, COLORS.lrt, 0.45, 9));
-  scene.add(routeLine(routes.parkhill_apu, COLORS.parkhill, 0.55, 7));
-  scene.add(routeLine(routes.parkhill_lrt, COLORS.parkhill, 0.6, 4));
+  // Each route: trips to APU drawn wide, trips home thinner on top (they often share roads).
+  lines.forEach((line, i) => {
+    const y = 0.4 + i * 0.05;
+    for (const pts of line.out) scene.add(routeLine({ pts }, line.color, y, ROUTE_WIDTH.out));
+    for (const pts of line.back) scene.add(routeLine({ pts }, line.color, y + 0.02, ROUTE_WIDTH.back));
+  });
 
-  const s = area.stops;
-  // Frame the midpoint between the LRT and APU (routes loop east of APU, so lean right).
-  const center = new THREE.Vector3((s.apu.x + s.lrt.x) / 2 + 200, 0, (s.apu.z + s.lrt.z) / 2 + 40);
+  // Frame every stop.
+  const stops = Object.values(area.stops);
+  const xs = stops.map((p) => p.x), zs = stops.map((p) => p.z);
+  const center = new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
   const aspect = container.clientWidth / container.clientHeight;
-  const camera = new THREE.PerspectiveCamera(40, aspect, 5, 12000);
+  const camera = new THREE.PerspectiveCamera(40, aspect, 5, 40000);
   // Narrow (portrait) screens see less sideways, so start further back.
   const back = Math.min(Math.max(Math.pow(aspect, -0.8), 1), 2.2);
-  camera.position.set(center.x + 140 * back, 1700 * back, center.z + 1550 * back);
+  const dist = span * 1.35 * back;
+  camera.position.set(center.x + dist * 0.08, dist * 0.78, center.z + dist * 0.72);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(center);
   controls.enableDamping = true;
   controls.maxPolarAngle = 1.35;
   controls.minDistance = 120;
-  controls.maxDistance = 5000;
+  controls.maxDistance = 30000;
   controls.update();
+  const home = { target: center.clone(), position: camera.position.clone() };
 
-  let focusTarget = null;
-  function focus(x, z) {
-    focusTarget = new THREE.Vector3(x, 0, z);
+  // Glide to (x, z); optionally zoom so the camera ends `distance` metres from it.
+  let focusGoal = null;
+  function focus(x, z, distance = null) {
+    focusGoal = { target: new THREE.Vector3(x, 0, z), distance };
+  }
+  function overview() {
+    focusGoal = { target: home.target.clone(), distance: home.position.distanceTo(home.target) };
   }
   function update() {
-    if (focusTarget) {
-      const delta = focusTarget.clone().sub(controls.target).multiplyScalar(0.12);
+    if (focusGoal) {
+      const delta = focusGoal.target.clone().sub(controls.target).multiplyScalar(0.12);
       controls.target.add(delta);
       camera.position.add(delta);
-      if (delta.length() < 0.5) focusTarget = null;
+      let zoomDone = true;
+      if (focusGoal.distance) {
+        const offset = camera.position.clone().sub(controls.target);
+        const d = offset.length();
+        const next = d + (focusGoal.distance - d) * 0.12;
+        camera.position.copy(controls.target).add(offset.setLength(next));
+        zoomDone = Math.abs(next - focusGoal.distance) < 2;
+      }
+      if (delta.length() < 0.5 && zoomDone) focusGoal = null;
     }
     controls.update();
   }
@@ -166,5 +184,5 @@ export function createWorld(container, area, routes) {
   window.addEventListener('resize', resize);
   resize();
 
-  return { scene, camera, renderer, controls, focus, update, resize };
+  return { scene, camera, renderer, controls, focus, overview, update, resize };
 }

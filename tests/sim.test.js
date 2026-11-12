@@ -1,96 +1,139 @@
 import { describe, it, expect } from 'vitest';
-import { createSim, stepSim, stopScreen, SERVICE_START, SERVICE_END } from '../src/sim/sim.js';
-import { buildRoutes } from '../src/sim/routing.js';
-import area from '../src/data/area.json';
+import {
+  createSim, stepSim, stopScreen, departuresBoard, estimateTripSec,
+  SERVICE_START, SERVICE_END,
+} from '../src/sim/sim.js';
+import { LINES } from '../src/data/lines.js';
+import routes from '../src/data/routes.json';
+import { parseTime } from '../src/sim/schedule.js';
 
-const routes = buildRoutes(area);
-const run = (sim, seconds, dt = 1) => { for (let t = 0; t < seconds; t += dt) stepSim(sim, dt); };
+const h = (hours) => Math.round(hours * 3600);
+const make = (opts = {}) => createSim({ lines: LINES, routes, seed: 1, ...opts });
+const runTo = (sim, clock, dt = 10) => { while (sim.clock < clock && sim.running) stepSim(sim, Math.min(dt, clock - sim.clock)); };
 
-describe('simulation', () => {
-  it('starts at 07:00 with three stops and the base fleet', () => {
-    const sim = createSim({ routes, seed: 1 });
+describe('timetable-driven simulation', () => {
+  it('starts at 06:30 with every route\'s fleet parked at its first pickup', () => {
+    const sim = make();
     expect(sim.clock).toBe(SERVICE_START);
-    expect(SERVICE_START).toBe(7 * 3600);
-    expect(Object.keys(sim.stops).sort()).toEqual(['apu', 'lrt', 'parkhill']);
-    expect(sim.buses.map((b) => b.id).sort()).toEqual(['L1', 'L2', 'P1']);
-    expect(sim.running).toBe(true);
-  });
-
-  it('boards students in the first hour and never goes negative', () => {
-    const sim = createSim({ routes, seed: 1 });
-    let minQueue = 0;
-    for (let t = 0; t < 3600; t++) {
-      stepSim(sim, 1);
-      for (const s of Object.values(sim.stops)) minQueue = Math.min(minQueue, s.queue);
+    expect(SERVICE_START).toBe(h(6.5));
+    expect(SERVICE_END).toBe(h(22.5));
+    const total = LINES.reduce((n, l) => n + l.fleet, 0);
+    expect(sim.buses).toHaveLength(total);
+    for (const bus of sim.buses) {
+      const line = LINES.find((l) => l.id === bus.line);
+      expect(bus.at).toBe(line.pickups[0]);
     }
-    expect(sim.stats.boarded).toBeGreaterThan(0);
-    expect(minQueue).toBe(0);
   });
 
-  it('caps extra buses at one per stop', () => {
-    const sim = createSim({ routes, seed: 1 });
-    sim.stops.lrt.queue = 200;
+  it('runs the 07:30 LRT→APU trip', () => {
+    const sim = make();
+    runTo(sim, h(7.5) + 120);
+    const dep = sim.lines.lrt.deps.find((d) => d.dir === 'out' && d.t === parseTime('07:30').t);
+    expect(dep.served).toBe(true);
+  });
+
+  it('serves every timetabled trip of the day, mostly on time', () => {
+    const sim = make();
+    runTo(sim, SERVICE_END);
+    for (const line of LINES) {
+      const deps = sim.lines[line.id].deps.filter((d) => !d.extra);
+      expect(deps.every((d) => d.served), `${line.id} unserved`).toBe(true);
+      const late = deps.filter((d) => d.lateSec > 10 * 60).length;
+      expect(late / deps.length, `${line.id} late share`).toBeLessThanOrEqual(0.15);
+    }
+  });
+
+  it('keeps queues non-negative and loads within seats', () => {
+    const sim = make();
+    while (sim.running) {
+      stepSim(sim, 15);
+      for (const q of Object.values(sim.queues)) expect(q.queue).toBeGreaterThanOrEqual(0);
+      for (const b of sim.buses) expect(b.load).toBeLessThanOrEqual(b.capacity);
+    }
+  });
+
+  it('is busy in the morning peak and quiet at night', () => {
+    const sim = make();
+    let peak = 0;
+    let night = 0;
+    while (sim.running) {
+      stepSim(sim, 10);
+      const q = sim.queues.lrt.queue;
+      if (sim.clock >= h(7.5) && sim.clock < h(9)) peak = Math.max(peak, q);
+      if (sim.clock >= h(20.5)) night = Math.max(night, q);
+    }
+    expect(peak).toBeGreaterThan(20);
+    expect(night).toBeLessThan(5);
+  });
+
+  it('shows Offline once a stop has no more trips today', () => {
+    const sim = make();
+    runTo(sim, h(19));
+    expect(stopScreen(sim, 'maple').status).toBe('Offline'); // last Maple→APU 13:10
+    expect(stopScreen(sim, 'lrt').status).toBe('Offline'); // last LRT→APU 18:20
+  });
+
+  it('stop screen shows the next scheduled departure', () => {
+    const sim = make();
+    runTo(sim, h(12));
+    const s = stopScreen(sim, 'parkhill');
+    expect(s.nextTime).toBe(parseTime('13:45').t);
+    expect(s.status).toBe('Waiting');
+    expect(s.inLine).toBe(sim.queues.parkhill.queue);
+  });
+
+  it('APU board lists every route with its next departure home', () => {
+    const sim = make();
+    runTo(sim, h(16.2));
+    const board = departuresBoard(sim);
+    expect(board.map((r) => r.lineId)).toEqual(LINES.map((l) => l.id));
+    const ph = board.find((r) => r.lineId === 'parkhill');
+    expect(ph.nextTime).toBe(parseTime('16:15').t > sim.clock ? parseTime('16:15').t : parseTime('17:15').t);
+  });
+
+  it('can start at any hour', () => {
+    const sim = make({ startClock: h(17) });
+    expect(sim.clock).toBe(h(17));
+    expect(sim.lines.lrt.deps.filter((d) => d.served).length).toBeGreaterThan(30);
+  });
+
+  it('calls one extra bus when a line overflows between trips', () => {
+    const sim = make({ startClock: h(11.75) }); // next LRT→APU is 12:10
+    sim.queues.lrt.queue = 200;
     let maxExtra = 0;
-    for (let t = 0; t < 600; t++) {
+    for (let i = 0; i < 6 * 60; i++) {
       stepSim(sim, 1);
-      maxExtra = Math.max(maxExtra, sim.buses.filter((b) => b.extra).length);
+      maxExtra = Math.max(maxExtra, sim.buses.filter((b) => b.line === 'lrt' && b.trip?.extra).length);
     }
+    expect(sim.stats.extraBuses).toBeGreaterThanOrEqual(1);
     expect(maxExtra).toBe(1);
-    expect(sim.alerts.some((a) => a.text.startsWith('Line is longer than one bus: 2nd bus called'))).toBe(true);
+    expect(sim.alerts.some((a) => a.stopId === 'lrt' && a.text.startsWith('Line is longer than one bus'))).toBe(true);
+  });
+
+  it('sizes demand to the timetable so quiet routes rarely need extra buses', () => {
+    const sim = make();
+    runTo(sim, SERVICE_END);
+    const extras = (id) => sim.lines[id].deps.filter((d) => d.extra).length;
+    for (const id of ['kuchai_sentral', 'divo', 'maple', 'parkhill']) expect(extras(id), id).toBeLessThanOrEqual(2);
+  });
+
+  it('takes longer in rush-hour traffic', () => {
+    const sim = make();
+    expect(estimateTripSec(sim, 'lrt', 'out', h(8))).toBeGreaterThan(estimateTripSec(sim, 'lrt', 'out', h(11)) * 1.5);
   });
 
   it('is deterministic for the same seed', () => {
-    const a = createSim({ routes, seed: 7 });
-    const b = createSim({ routes, seed: 7 });
-    run(a, 3600);
-    run(b, 3600);
+    const a = make({ seed: 7 });
+    const b = make({ seed: 7 });
+    runTo(a, h(10));
+    runTo(b, h(10));
     expect(a.stats.boarded).toBe(b.stats.boarded);
   });
 
-  it('offline after service end', () => {
-    const sim = createSim({ routes, seed: 1 });
-    sim.clock = SERVICE_END - 5;
-    run(sim, 10);
-    expect(SERVICE_END).toBe(22 * 3600);
+  it('stops at the end of service', () => {
+    const sim = make({ startClock: SERVICE_END - 30 });
+    runTo(sim, SERVICE_END + 60);
     expect(sim.running).toBe(false);
     expect(stopScreen(sim, 'lrt').status).toBe('Offline');
-    const clock = sim.clock;
-    stepSim(sim, 60);
-    expect(sim.clock).toBe(clock);
-  });
-
-  it('shows the first scheduled bus before the sim has stepped', () => {
-    const sim = createSim({ routes, seed: 1 });
-    expect(stopScreen(sim, 'lrt').nextBusMin).toBe(0);
-    expect(stopScreen(sim, 'parkhill').nextBusMin).toBe(8);
-  });
-
-  it('shows the next scheduled departure after the Parkhill bus has left', () => {
-    const sim = createSim({ routes, seed: 1 });
-    run(sim, 10 * 60); // 07:10 — P1 left Parkhill at 07:09, next departure 07:23
-    expect(sim.buses.find((b) => b.id === 'P1').atStop).not.toBe('parkhill');
-    expect(stopScreen(sim, 'parkhill').nextBusMin).toBe(13);
-  });
-
-  it('stop screen reports line length and next bus', () => {
-    const sim = createSim({ routes, seed: 1 });
-    run(sim, 120);
-    const s = stopScreen(sim, 'apu');
-    expect(s.inLine).toBe(sim.stops.apu.queue);
-    expect(['Ongoing', 'Waiting']).toContain(s.status);
-    expect(s.nextBusMin === null || s.nextBusMin >= 0).toBe(true);
-  });
-
-  it('the Parkhill bus sometimes takes the smart stop at the LRT during the rush', () => {
-    const sim = createSim({ routes, seed: 3 });
-    run(sim, 2 * 3600, 2);
-    expect(sim.stats.smartStops).toBeGreaterThan(0);
-  });
-
-  it('survives 60× speed steps (large dt)', () => {
-    const sim = createSim({ routes, seed: 1 });
-    run(sim, 3600, 15);
-    for (const s of Object.values(sim.stops)) expect(s.queue).toBeGreaterThanOrEqual(0);
-    for (const b of sim.buses) expect(b.load).toBeLessThanOrEqual(b.capacity);
   });
 });

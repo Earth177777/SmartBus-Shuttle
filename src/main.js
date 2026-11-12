@@ -1,8 +1,9 @@
 import './style.css';
 import * as THREE from 'three';
 import area from './data/area.json';
-import { buildRoutes } from './sim/routing.js';
-import { createSim, stepSim } from './sim/sim.js';
+import routes from './data/routes.json';
+import { LINES } from './data/lines.js';
+import { createSim, stepSim, SERVICE_START } from './sim/sim.js';
 import { createWorld } from './scene/world.js';
 import { createBusLayer } from './scene/buses.js';
 import { createStopLayer } from './scene/stops.js';
@@ -10,27 +11,48 @@ import { createPanel } from './ui/panel.js';
 
 const MAX_REAL_DT = 0.25; // seconds; a background tab must not jump the sim forward
 const CLICK_SLOP_PX = 6; // a drag longer than this orbits the camera instead of picking
+const FOCUS_DISTANCE = 1400; // metres from a selected stop
 
 const container = document.getElementById('map');
-const routes = buildRoutes(area);
-const world = createWorld(container, area, routes);
-const busLayer = createBusLayer(world.scene, area.stops);
-const stopLayer = createStopLayer(world.scene, area.stops);
+const stops = routes.stops;
+const lineColors = Object.fromEntries(LINES.map((l) => [l.id, l.color]));
+const stopColors = Object.fromEntries(LINES.flatMap((l) => l.pickups.map((s) => [s, l.color])));
+const routeById = Object.fromEntries(routes.lines.map((r) => [r.id, r]));
+const lineViews = LINES.map((l) => ({
+  color: l.color,
+  out: routeById[l.id].outbound.map((leg) => leg.pts),
+  back: routeById[l.id].inbound.map((leg) => leg.pts),
+}));
+
+const world = createWorld(container, { ...area, stops }, lineViews);
+const busLayer = createBusLayer(world.scene, stops, lineColors);
+const queueOf = (sim, stopId) =>
+  stopId === 'apu'
+    ? Object.entries(sim.queues).filter(([k]) => k.startsWith('apu:')).reduce((n, [, q]) => n + q.queue, 0)
+    : sim.queues[stopId]?.queue ?? 0;
+const stopLayer = createStopLayer(world.scene, stops, stopColors, queueOf);
 
 const newSeed = () => Math.floor(Math.random() * 1e6);
+const makeSim = (startClock = SERVICE_START) => createSim({ lines: LINES, routes, seed: newSeed(), startClock });
 const app = {
-  sim: createSim({ routes, seed: newSeed() }),
+  sim: makeSim(7 * 3600),
   speed: 10,
   paused: false,
   reset() {
-    this.sim = createSim({ routes, seed: newSeed() });
+    this.sim = makeSim();
+  },
+  jumpTo(clockSec) {
+    this.sim = makeSim(clockSec);
   },
 };
 app.world = world;
 window.smartshuttle = app; // handy for debugging in the console
 
 const panel = createPanel(app, {
-  onSelectStop: (id) => world.focus(area.stops[id].x, area.stops[id].z),
+  lines: LINES,
+  stops,
+  onSelectStop: (id) => world.focus(stops[id].x, stops[id].z, FOCUS_DISTANCE),
+  onOverview: () => world.overview(),
 });
 
 // Click a stop or bus to select and focus it.
@@ -55,8 +77,8 @@ world.renderer.domElement.addEventListener('pointerup', (e) => {
 });
 
 function draw(forcePanel = false) {
-  busLayer.sync(app.sim);
-  stopLayer.sync(app.sim);
+  busLayer.sync(app.sim, world.camera);
+  stopLayer.sync(app.sim, world.camera);
   panel.render(app.sim, forcePanel);
   world.update();
   world.renderer.render(world.scene, world.camera);
