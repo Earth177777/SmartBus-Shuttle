@@ -25,6 +25,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Dates are `YYYY-MM-DD`.
 - **Webcam stop box** (TensorFlow.js COCO-SSD, on-device counting) that feeds a stop's line.
 - **Phone view** (`phone.html`) — an APSpace-style card that follows the demo live in the same browser, with a QR code; optional Firestore `live/state` sync when `VITE_FIREBASE_*` is set.
 - **Guided tour** (driver.js) following the pitch deck and covering every feature; Hugeicons throughout.
+- **GitHub Actions workflow** to publish the build to GitHub Pages (added by Herbert; **not yet working** — see [D-14](../decisions/README.md#d-14)).
 - **Documentation**: root README with mind map, `webtinousQA/` workspace (standards, architecture, rules, data, developer guide, decisions, maps, evidence, reports), `.env.example`.
 
 ### Changed

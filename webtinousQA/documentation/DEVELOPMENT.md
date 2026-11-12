@@ -44,6 +44,10 @@ docs/         original design and plan (history)
 - **Git:** work on a branch; do not merge to `main` without the team's agreement. No secrets in commits — real `.env*` files are git-ignored; commit only [`.env.example`](../../.env.example).
 - **Icons:** Hugeicons (free set) via `src/ui/icons.js`; no emoji in the UI.
 
+## Deployment (GitHub Pages)
+
+`.github/workflows/deploy.yml` builds with `pnpm build` and publishes `dist/` to GitHub Pages on every push to `feat/3d-map`. **It has not succeeded yet:** its first run failed at startup and Pages was not enabled (checked 2026-11-12). To make it work, enable *Settings → Pages → Source: GitHub Actions*, re-run the workflow, and note the pnpm 9 pin in the workflow versus pnpm 11 used here. Until then, use `pnpm preview` for a production-like local check. See [D-14](../decisions/README.md#d-14).
+
 ## Optional Firebase
 
 Copy [`.env.example`](../../.env.example) to `.env.local`, fill in the web app config from your Firebase console, restart `pnpm dev`. **Configure Firestore security rules before using a real project** — none are provided here. The live-sync path has not been tested against Firestore or its emulator (see [evidence](../evidence/verification-2026-11-12.md)).

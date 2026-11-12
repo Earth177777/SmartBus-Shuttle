@@ -27,7 +27,7 @@
 | 13 | GitHub README rendering | **Not run** | — | Cannot claim a GitHub render was seen. |
 | 14 | Pitch deck and portal submission readiness | **Not run** | Outside this repository. | See *Open* findings 5 and 11 in the [QA index](../README.md#current-findings-and-limits). |
 
-**Link check result (check 5), 2026-11-12:** `checked 28 markdown files, 153 relative links, 0 problem(s)`. The first run found ten links to this record before it existed; they were fixed by writing it.
+**Link check result (check 5), 2026-11-12:** `checked 28 markdown files, 158 relative links, 0 problem(s)`. The first run found ten links to this record before it existed; they were fixed by writing it.
 
 ## Evidence labels used in the documentation
 

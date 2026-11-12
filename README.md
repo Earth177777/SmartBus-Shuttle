@@ -126,10 +126,10 @@ Current version: **0.1.0**, defined by `package.json`. **No release, tag or GitH
 
 ## Help, contribution and rights
 
-- **Help and issues:** use the GitHub repository [Earth177777/SmartBus-Shuttle](https://github.com/Earth177777/SmartBus-Shuttle) (currently private — ask the team for access).
+- **Help and issues:** use the GitHub repository [Earth177777/SmartBus-Shuttle](https://github.com/Earth177777/SmartBus-Shuttle) (public as of 2026-11-12; first checked by the documentation task).
 - **Contributing:** work on a branch and merge only with the team's agreement; run `pnpm test` before pushing; keep [CHANGELOG](webtinousQA/documentation/CHANGELOG.md) and [UPDATELOG](webtinousQA/documentation/UPDATELOG.md) current.
 - **Team (Buset):** Gilbert, Herbert Valentino, Louis, Nicholas.
-- **License:** none has been chosen yet, so no permission to reuse the code is granted beyond the team's own use. The team should pick one before sharing publicly.
+- **License:** none has been chosen yet, so no permission to reuse the code is granted beyond the team's own use — even though the repository is public. The team should pick one soon (see [decision D-13](webtinousQA/decisions/README.md#d-13)).
 - **Third-party rights and notices:**
 
 | Material | Terms |
